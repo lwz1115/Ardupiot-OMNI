@@ -16,6 +16,22 @@ LOIT_TYPE 2
 # --- OmniX lateral translation in autonomous modes ---
 # 100 = full lateral thrust available, 0 = disable (fall back to steering only)
 OMNI_LAT_PCT 100
+# 0 = this boat CANNOT yaw (radial thrusters, no torque).  Autonomous omni
+# translation then never commands steering; heading is only measured live and
+# the surge/sway split is recomputed every loop from the current GPS heading.
+OMNI_YAW_HOLD 0
+
+# --- Heading source: UM982 dual-antenna RTK (no compass installed) ---
+# The EKF yaw must come from the GNSS moving-baseline heading, not a compass.
+GPS_TYPE 25            # Unicore moving-baseline NMEA (UM982 dual antenna)
+GPS_AUTO_CONFIG 1      # let ArduPilot configure the UM982 (baud 230400)
+SERIAL3_PROTOCOL 5     # UART1 = GPS serial port on CUAV V5
+SERIAL3_BAUD 230       # 230400, ArduPilot sets this on the UM982
+EK3_SRC1_YAW 2         # primary yaw source = GPS (dual-antenna heading)
+EK3_SRC2_YAW 8         # secondary yaw source = GSF (only when moving)
+# NOTE: set GPS_POS1_X/Y/Z and GPS_POS2_X/Y/Z (m, relative to IMU) once the
+# antennas are mounted, so the EKF position refers to the hull centre and the
+# boat stops on the waypoint instead of up to 45 cm away.
 
 # --- Four thrusters on output channels 1..4 (motor functions 33..36) ---
 SERVO1_FUNCTION 33

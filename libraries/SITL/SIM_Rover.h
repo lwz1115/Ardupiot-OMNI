@@ -68,6 +68,10 @@ private:
     float omnix_surge_damping = 0.6f;       // linear damping along surge axis (1/s)
     float omnix_sway_damping = 1.2f;        // linear damping along sway axis (1/s), higher = less sideways drift
     float omnix_yaw_damping = 2.0f;         // rotational damping about z axis (1/s)
+    // Constant yaw rate (deg/s) superimposed on the model, used to emulate a
+    // boat that cannot yaw but is rotated by water current.  Set from the frame
+    // string, e.g. --model rover-omnix:yawdrift=5
+    float omnix_yaw_drift = 0.0f;
 
     void update_ackermann_or_skid(const struct sitl_input &input, float delta_time);
     void update_omni3(const struct sitl_input &input, float delta_time);

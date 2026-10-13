@@ -43,7 +43,11 @@ void ModeLoiter::update()
         if (omni_translate_enabled()) {
             // hold the bow and stop translating once on station, otherwise a
             // stale sideways command would keep pushing the boat off point
-            calc_steering_to_heading(_omni_heading_cd);
+            if (g2.omni_yaw_hold > 0) {
+                calc_steering_to_heading(_omni_heading_cd);
+            } else {
+                g2.motors.set_steering(0);
+            }
             calc_throttle(0.0f, false);
             g2.motors.set_lateral(0);
             return;

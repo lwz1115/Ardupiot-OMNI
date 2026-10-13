@@ -564,11 +564,20 @@ void Mode::calc_translate_to_bearing(float bearing_cd, float target_speed, float
         return;
     }
 
-    // hold the bow at the requested heading instead of turning towards the target
-    calc_steering_to_heading(locked_heading_cd);
+    // Hold the bow steady only if the frame can actually yaw.  On frames whose
+    // thrusters cancel their torque (e.g. radially mounted props) the heading
+    // drifts freely, so a steering command would only inject unwanted thrust.
+    if (g2.omni_yaw_hold > 0) {
+        calc_steering_to_heading(locked_heading_cd);
+    } else {
+        g2.motors.set_steering(0);
+    }
 
-    // angle between where the bow points and where we actually want to go
-    const float error_rad = radians(wrap_180_cd(bearing_cd - locked_heading_cd) * 0.01f);
+    // Decompose using the CURRENT heading, not the heading captured at the start
+    // of the leg.  surge/sway act in the body frame, so the resulting motion
+    // only points at the waypoint when the live heading is used.  This is
+    // essential on boats that cannot yaw and therefore drift in heading.
+    const float error_rad = radians(wrap_180_cd(bearing_cd - ahrs.yaw_sensor) * 0.01f);
 
     // split the desired ground velocity into body frame surge and sway.
     // positive sway is to the right of the bow, positive surge is forward.

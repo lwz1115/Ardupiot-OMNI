@@ -363,6 +363,9 @@ public:
     // percentage of lateral thrust available to autonomous modes on omni frames
     AP_Int16 omni_lat_pct;
 
+    // hold heading in autonomous modes on omni frames (0 = cannot yaw)
+    AP_Int8 omni_yaw_hold;
+
 #if HAL_SPRAYER_ENABLED
     // Sprayer
     AC_Sprayer sprayer;

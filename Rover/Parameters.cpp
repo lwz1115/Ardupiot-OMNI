@@ -679,6 +679,13 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("OMNI_LAT_PCT", 63, ParametersG2, omni_lat_pct, 100),
 
+    // @Param: OMNI_YAW_HOLD
+    // @DisplayName: Omni hold heading in auto modes
+    // @Description: Controls whether autonomous modes command a heading hold on omni frames. Set to 1 for frames that can yaw (bow is held steady while translating). Set to 0 for frames that cannot yaw (e.g. radially mounted thrusters), where the heading drifts with the water and steering commands would only inject unwanted thrust; the craft then translates purely by surge/sway using the live heading.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Advanced
+    AP_GROUPINFO("OMNI_YAW_HOLD", 50, ParametersG2, omni_yaw_hold, 1),
+
     AP_GROUPEND
 };
 

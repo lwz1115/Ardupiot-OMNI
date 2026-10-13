@@ -59,6 +59,12 @@ SimRover::SimRover(const char *frame_str) :
     omnix = strstr(frame_str, "omnix") != nullptr;
     if (omnix) {
         printf("OmniX 4-thruster Rover/Boat Simulation Started\n");
+        // optional heading drift in deg/s, e.g. --model rover-omnix:yawdrift=5
+        const char *p = strstr(frame_str, "yawdrift=");
+        if (p != nullptr) {
+            omnix_yaw_drift = atof(p + strlen("yawdrift="));
+            printf("OmniX yaw drift %.1f deg/s\n", omnix_yaw_drift);
+        }
     }
 
     lock_step_scheduled = true;
@@ -375,7 +381,9 @@ void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
     const float new_yaw_rate = yaw_rate + yaw_accel * delta_time;
 
     // set gyro and update attitude
-    gyro = Vector3f(0, 0, new_yaw_rate);
+    // the optional yaw drift is a constant rotation rate (like a boat being
+    // turned by a current) superimposed on the command-driven yaw rate
+    gyro = Vector3f(0, 0, new_yaw_rate + radians(omnix_yaw_drift));
     dcm.rotate(gyro * delta_time);
     dcm.normalize();
 
