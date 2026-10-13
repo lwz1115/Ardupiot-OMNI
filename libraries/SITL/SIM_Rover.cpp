@@ -56,6 +56,11 @@ SimRover::SimRover(const char *frame_str) :
         printf("Omni3 Mecanum Rover Simulation Started\n");
     }
 
+    omnix = strstr(frame_str, "omnix") != nullptr;
+    if (omnix) {
+        printf("OmniX 4-thruster Rover/Boat Simulation Started\n");
+    }
+
     lock_step_scheduled = true;
 }
 
@@ -112,6 +117,8 @@ void SimRover::update(const struct sitl_input &input)
     // update gyro and accel_body according to frame type
     if (omni3) {
         update_omni3(input, delta_time);
+    } else if (omnix) {
+        update_omnix(input, delta_time);
     } else {
         update_ackermann_or_skid(input, delta_time);
     }
@@ -277,6 +284,98 @@ void SimRover::update_omni3(const struct sitl_input &input, float delta_time)
     gyro = Vector3f(0, 0, twist.z);
 
     // update attitude
+    dcm.rotate(gyro * delta_time);
+    dcm.normalize();
+
+    // accel in body frame due to motors (excluding gravity)
+    accel_body = Vector3f(accel_x, accel_y, 0);
+}
+
+/*
+  update the omniX rover/boat simulation by one time step
+
+  omniX is an X-shaped frame with 4 thrusters mounted at fixed 45
+  degree angles (one in each corner, thrusting outward).  This is the
+  same geometry as AP_MotorsUGV FRAME_TYPE_OMNIX:
+
+    motor 0 : right-front thruster, pointing outward-right
+    motor 1 : left-front  thruster, pointing outward-left
+    motor 2 : right-rear  thruster, pointing outward-right
+    motor 3 : left-rear   thruster, pointing outward-left
+
+  Each thruster contributes a body-frame force:
+
+    f_i = T_i * [ cos(45deg) * sign_x_i
+                , sin(45deg) * sign_y_i ]
+
+  where sign_x_i/sign_y_i encode the thruster's fixed orientation.
+  The four thrusters combine to give surge, sway and yaw freedom, so
+  the vehicle can move in any direction without turning.
+
+  The sign conventions below are chosen so that positive throttle
+  commands from AP_MotorsUGV produce forward motion, positive
+  steering produces clockwise (right turn) yaw and positive lateral
+  produces motion to the right, matching the mixing factors in
+  AP_MotorsUGV::setup_omni().
+ */
+void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
+{
+    // The default Rover/Boat OmniX configuration uses the four thruster outputs
+    // on servo channels 1..4 as motor functions 33..36.  This simulator assumes
+    // that mapping unless a user reassigns those functions elsewhere.  Any
+    // remapping should be reflected in the same way in the model.
+    float thr[4] {};
+    battery_current = 0.0f;
+    if (!battery_is_empty()) {
+        for (uint8_t i=0; i<4; i++) {
+            const uint16_t servo_pwm = input.servos[i];
+            thr[i] = (servo_pwm > 0) ? normalise_servo_input(servo_pwm) : 0.0f;
+            battery_current += 10.0f * fabsf(thr[i]);
+        }
+    }
+
+    // AP_MotorsUGV::output_omni() uses the following mixer:
+    //  m0 = t - s - l
+    //  m1 = t - s + l
+    //  m2 = t + s - l
+    //  m3 = t + s + l
+    // Invert this to obtain the body-frame commands used by the sim.
+    const float throttle_cmd = 0.25f * (thr[0] + thr[1] + thr[2] + thr[3]);
+    const float steering_cmd  = 0.25f * (-thr[0] - thr[1] + thr[2] + thr[3]);
+    const float lateral_cmd   = 0.25f * (-thr[0] + thr[1] - thr[2] + thr[3]);
+
+    const float surge_target = throttle_cmd * omnix_max_speed;
+    // On this X-frame a positive lateral command produces motion to the LEFT of
+    // the bow (body-frame -y), so negate it to model the real vehicle.
+    const float sway_target  = -lateral_cmd * omnix_max_lateral_speed;
+    const float yaw_target   = steering_cmd * radians(omnix_max_yaw_rate);
+
+    // current body-frame velocity
+    Vector3f velocity_body = dcm.transposed() * velocity_ef;
+
+    // very crude first-order throttle model.  A pure proportional
+    // accel = gain * (target - velocity) makes the steady-state speed equal
+    // to the commanded target speed.  Adding a separate linear damping term
+    // here would pull the steady state down to a fraction of the target
+    // (e.g. only ~45% with the old damping gain), which made the boat much
+    // slower than requested.  With target = 0 the same model still gives a
+    // natural exponential glide to a halt, like a real boat with drag.
+    const float surge_scale = MAX(omnix_max_speed, 0.1f);
+    const float sway_scale  = MAX(omnix_max_lateral_speed, 0.1f);
+    float accel_x = omnix_max_accel * (surge_target - velocity_body.x) / surge_scale;
+    float accel_y = omnix_max_accel * (sway_target - velocity_body.y) / sway_scale;
+
+    // Use angular acceleration and integrate it, rather than applying a rate
+    // lag directly. This gives the vehicle rotational inertia and a physically
+    // more realistic response to steering commands.
+    const float yaw_rate = gyro.z;
+    const float yaw_accel = (yaw_target - yaw_rate) * radians(omnix_max_yaw_accel)
+                          / MAX(radians(omnix_max_yaw_rate), 0.1f)
+                          - omnix_yaw_damping * yaw_rate;
+    const float new_yaw_rate = yaw_rate + yaw_accel * delta_time;
+
+    // set gyro and update attitude
+    gyro = Vector3f(0, 0, new_yaw_rate);
     dcm.rotate(gyro * delta_time);
     dcm.normalize();
 

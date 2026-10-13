@@ -1,0 +1,33 @@
+# OmniX 4-thruster X-frame boat/rover defaults
+# FRAME_CLASS 2 = Boat (runs on ardurover firmware)
+FRAME_CLASS 2
+# FRAME_TYPE 2 = OmniX (4 angled thrusters)
+FRAME_TYPE 2
+# LOIT_TYPE 2 = always face stern towards target point, so the vehicle
+# reverses away from the target instead of turning around
+LOIT_TYPE 2
+# Use one EKF3 IMU lane in SITL to avoid unnecessary switching between
+# simulated redundant IMUs while validating OmniX navigation.
+EK3_IMU_MASK 1
+# four thrusters on motor1..motor4 (functions 33..36)
+SERVO1_FUNCTION 33
+SERVO1_MAX 2000
+SERVO1_MIN 1000
+SERVO2_FUNCTION 34
+SERVO2_MAX 2000
+SERVO2_MIN 1000
+SERVO3_FUNCTION 35
+SERVO3_MAX 2000
+SERVO3_MIN 1000
+SERVO4_FUNCTION 36
+SERVO4_MAX 2000
+SERVO4_MIN 1000
+# lateral channel (yaw stick drives lateral on omni frames)
+RC2_MAX 2000
+RC2_MIN 1000
+RC2_TRIM 1500
+# gentle cruise for a boat
+CRUISE_SPEED 1.5
+CRUISE_THROTTLE 50
+WP_SPEED 1.5
+WP_PIVOT_RATE 60

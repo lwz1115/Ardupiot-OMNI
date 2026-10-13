@@ -671,6 +671,14 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("GUID_TIMEOUT", 62, ParametersG2, guided_timeout, 3.0),
 
+    // @Param: OMNI_LAT_PCT
+    // @DisplayName: Omni lateral percentage
+    // @Description: Percentage of available lateral (sideways) thrust used by autonomous modes on omni frames such as OmniX. Set to zero to rely on steering only. Only used when FRAME_TYPE selects an omni frame.
+    // @Range: 0 100
+    // @Increment: 1
+    // @User: Advanced
+    AP_GROUPINFO("OMNI_LAT_PCT", 63, ParametersG2, omni_lat_pct, 100),
+
     AP_GROUPEND
 };
 

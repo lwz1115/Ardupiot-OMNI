@@ -15,6 +15,10 @@ bool ModeLoiter::_enter()
     // initialise heading to current heading
     _desired_yaw_cd = ahrs.yaw_sensor;
 
+    // omni frames hold this bow heading for the whole loiter and translate
+    // sideways back to the loiter point instead of turning
+    _omni_heading_cd = ahrs.yaw_sensor;
+
     return true;
 }
 
@@ -35,12 +39,30 @@ void ModeLoiter::update()
         if (!g2.sailboat.tack_enabled() && g2.sailboat.sail_enabled()) {
             _desired_yaw_cd = degrees(g2.windvane.get_true_wind_direction_rad()) * 100.0f;
         }
+
+        if (omni_translate_enabled()) {
+            // hold the bow and stop translating once on station, otherwise a
+            // stale sideways command would keep pushing the boat off point
+            calc_steering_to_heading(_omni_heading_cd);
+            calc_throttle(0.0f, false);
+            g2.motors.set_lateral(0);
+            return;
+        }
     } else {
         // P controller with hard-coded gain to convert distance to desired speed
         _desired_speed = MIN((_distance_to_destination - loiter_radius) * g2.loiter_speed_gain, g2.wp_nav.get_default_speed());
 
         // calculate bearing to destination
-        _desired_yaw_cd = rover.current_loc.get_bearing_to(_destination);
+        const float bearing_to_destination = rover.current_loc.get_bearing_to(_destination);
+
+        if (omni_translate_enabled()) {
+            // hold the bow at the heading captured when loiter was entered and
+            // crab sideways back towards the loiter point instead of turning
+            calc_translate_to_bearing(bearing_to_destination, _desired_speed, _omni_heading_cd);
+            return;
+        }
+
+        _desired_yaw_cd = bearing_to_destination;
         float yaw_error_cd = wrap_180_cd(_desired_yaw_cd - ahrs.yaw_sensor);
         // if destination is behind vehicle, reverse towards it
         if ((fabsf(yaw_error_cd) > 9000 && g2.loit_type == 0) || g2.loit_type == 2) {
@@ -70,6 +92,11 @@ void ModeLoiter::update()
     // run steering and throttle controllers
     calc_steering_to_heading(_desired_yaw_cd, turn_rate);
     calc_throttle(_desired_speed, true);
+
+    if (!omni_translate_enabled()) {
+        // non-omni frames (or lateral disabled) keep the original behaviour
+        g2.motors.set_lateral(0);
+    }
 }
 
 // get desired location

@@ -1,0 +1,51 @@
+# OmniX 4-thruster X-frame boat - REAL vehicle parameter set
+# Import this in QGC (Parameters -> Load from file) after flashing ardurover.
+# This is the real-vehicle version: no SITL-only parameters.
+
+# --- Frame ---
+# FRAME_CLASS 2 = Boat
+FRAME_CLASS 2
+# FRAME_TYPE 2 = OmniX (4 angled thrusters)
+FRAME_TYPE 2
+
+# --- Loiter behaviour ---
+# LOIT_TYPE 2 = always face stern towards target point, so the vehicle
+# reverses / translates instead of turning around.
+LOIT_TYPE 2
+
+# --- OmniX lateral translation in autonomous modes ---
+# 100 = full lateral thrust available, 0 = disable (fall back to steering only)
+OMNI_LAT_PCT 100
+
+# --- Four thrusters on output channels 1..4 (motor functions 33..36) ---
+SERVO1_FUNCTION 33
+SERVO1_MIN 1000
+SERVO1_MAX 2000
+SERVO2_FUNCTION 34
+SERVO2_MIN 1000
+SERVO2_MAX 2000
+SERVO3_FUNCTION 35
+SERVO3_MIN 1000
+SERVO3_MAX 2000
+SERVO4_FUNCTION 36
+SERVO4_MIN 1000
+SERVO4_MAX 2000
+
+# --- RC input mapping ---
+# steering = roll(1), throttle = throttle(3), lateral = yaw(4)
+RCMAP_ROLL 1
+RCMAP_THROTTLE 3
+RCMAP_YAW 4
+# lateral channel (yaw stick) centred
+RC4_MIN 1000
+RC4_TRIM 1500
+RC4_MAX 2000
+
+# --- Cruise / mission speed ---
+# Set WP_SPEED to the cruise speed you want (m/s). Mission DO_CHANGE_SPEED
+# commands override this per leg.
+CRUISE_SPEED 1.5
+CRUISE_THROTTLE 50
+WP_SPEED 1.5
+WP_RADIUS 3
+WP_PIVOT_RATE 60

@@ -57,8 +57,21 @@ private:
     float omni3_max_accel = 1.0f;           // omni vehicle's maximum forward acceleration in m/s/s
     float omni3_wheel_max_ang_vel = 50.0f;  // omni vehicle's wheel maximum angular velocity in rad/s
 
+    // omniX (X-frame, 4 angled thrusters) related members
+    bool omnix;                             // true if vehicle is a 4-thruster X-frame omni boat
+    float omnix_max_speed = 3.0f;           // maximum surge (forward/backward) speed in m/s
+    float omnix_max_lateral_speed = 3.0f;   // maximum sway (lateral) speed in m/s
+    float omnix_max_accel = 1.5f;           // maximum translational acceleration in m/s/s
+    float omnix_max_yaw_rate = 90.0f;       // maximum yaw rate in deg/s
+    float omnix_max_yaw_accel = 180.0f;      // maximum angular acceleration in deg/s/s
+    float omnix_turn_radius = 1.0f;         // distance from frame centre to each thruster in meters
+    float omnix_surge_damping = 0.6f;       // linear damping along surge axis (1/s)
+    float omnix_sway_damping = 1.2f;        // linear damping along sway axis (1/s), higher = less sideways drift
+    float omnix_yaw_damping = 2.0f;         // rotational damping about z axis (1/s)
+
     void update_ackermann_or_skid(const struct sitl_input &input, float delta_time);
     void update_omni3(const struct sitl_input &input, float delta_time);
+    void update_omnix(const struct sitl_input &input, float delta_time);
 
     float turn_circle(float steering) const;
     float calc_yaw_rate(float steering, float speed);

@@ -360,6 +360,9 @@ public:
     AP_Int8 loit_type;
     AP_Float loit_radius;
 
+    // percentage of lateral thrust available to autonomous modes on omni frames
+    AP_Int16 omni_lat_pct;
+
 #if HAL_SPRAYER_ENABLED
     // Sprayer
     AC_Sprayer sprayer;

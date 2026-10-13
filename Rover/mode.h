@@ -185,6 +185,18 @@ protected:
     // on things like proximity to corners and current speed
     virtual void calc_throttle(float target_speed, bool avoidance_enabled);
 
+    // true when this mode should hold a steady heading and reach the target
+    // by translating sideways as well as forwards.  Only true for omni frames
+    // when OMNI_LAT_PCT allows it.
+    bool omni_translate_enabled() const;
+
+    // drive towards a bearing without turning the bow on omni frames.
+    // The bow is held at locked_heading_cd and the requested speed vector is
+    // split into a forward (surge) and a sideways (sway) component, which is
+    // what allows the vehicle to crab across the map while keeping its heading.
+    // locked_heading_cd is only honoured on omni frames.
+    void calc_translate_to_bearing(float bearing_cd, float target_speed, float locked_heading_cd);
+
     // performs a controlled stop. returns true once vehicle has stopped
     bool stop_vehicle();
 
@@ -221,6 +233,15 @@ protected:
     float _distance_to_destination; // straight-line distance from vehicle to final destination in meters
     bool _reached_destination;  // true once the vehicle has reached the destination
     float _desired_yaw_cd;      // desired yaw in centi-degrees.  used in Auto, Guided and Loiter
+
+    // heading the bow is held at while translating on omni frames.
+    // Captured at the start of each leg and kept for the rest of the leg.
+    float _omni_heading_cd = 0.0f;
+    bool _omni_leg_valid = false;
+
+    // location of the waypoint the current omni-tranlation leg is heading to
+    int32_t _omni_leg_lat = 0;
+    int32_t _omni_leg_lng = 0;
 };
 
 

@@ -436,11 +436,49 @@ void Mode::navigate_to_waypoint()
     }
 #endif
 
+    float desired_heading_cd = g2.wp_nav.oa_wp_bearing_cd();
+
+    if (omni_translate_enabled()) {
+        // hold the bow steady and reach the waypoint by translating.  The
+        // heading is captured once per leg (whenever the target location
+        // changes) and then held, so the craft never turns around.
+        const Location &wp_dest = g2.wp_nav.get_destination();
+        if (!_omni_leg_valid ||
+            wp_dest.lat != _omni_leg_lat || wp_dest.lng != _omni_leg_lng) {
+            _omni_leg_lat = wp_dest.lat;
+            _omni_leg_lng = wp_dest.lng;
+            _omni_heading_cd = ahrs.yaw_sensor;
+            _omni_leg_valid = true;
+        }
+
+        // Do NOT use g2.wp_nav.get_speed(): it is computed for a
+        // differential-drive vehicle that slows to (near) zero while it turns
+        // towards the target, which on an omni frame would stop the craft
+        // whenever the waypoint is at a large angle to the bow.  An omni
+        // vehicle translates, so it should travel at the intended cruise speed
+        // regardless of the bearing error, decelerating only as it nears the
+        // waypoint so it can stop on target.
+        //
+        // Use get_speed_max() (the value set by DO_CHANGE_SPEED mission
+        // commands) rather than get_default_speed() (the WP_SPEED parameter),
+        // so a speed configured inside the mission (e.g. 1 m/s) is honoured.
+        const float cruise_speed = MAX(g2.wp_nav.get_speed_max(), 0.1f);
+        const float dist = _distance_to_destination;
+        const float stop_dist = MAX(attitude_control.get_stopping_distance(cruise_speed), 0.5f);
+        const float omni_speed = (dist < stop_dist)
+                                 ? MAX(cruise_speed * (dist / stop_dist), 0.05f)
+                                 : cruise_speed;
+
+        calc_translate_to_bearing(desired_heading_cd, omni_speed, _omni_heading_cd);
+        return;
+    }
+
+    _omni_leg_valid = false;
+
     // pass desired speed to throttle controller
     // do not do simple avoidance because this is already handled in the position controller
     calc_throttle(g2.wp_nav.get_speed(), false);
 
-    float desired_heading_cd = g2.wp_nav.oa_wp_bearing_cd();
     if (g2.sailboat.use_indirect_route(desired_heading_cd)) {
         // sailboats use heading controller when tacking upwind
         desired_heading_cd = g2.sailboat.calc_heading(desired_heading_cd);
@@ -461,6 +499,9 @@ void Mode::navigate_to_waypoint()
         // call turn rate steering controller
         calc_steering_from_turn_rate(desired_turn_rate_rads);
     }
+
+    // the standard heading-based path must not leave a lateral command active
+    g2.motors.set_lateral(0);
 }
 
 // calculate steering output given a turn rate
@@ -502,6 +543,55 @@ void Mode::calc_steering_to_heading(float desired_heading_cd, float rate_max_deg
                                                                          g2.motors.limit.steer_right,
                                                                          rover.G_Dt);
     set_steering(steering_out * 4500.0f);
+}
+
+// true if this mode should translate sideways instead of turning towards the target
+bool Mode::omni_translate_enabled() const
+{
+    return g2.motors.is_omni() && g2.omni_lat_pct > 0;
+}
+
+// drive towards a bearing on omni frames while holding the bow steady.
+// The requested ground velocity vector is rotated into the body frame and
+// split into surge and sway so the craft can crab sideways across the map
+// without changing heading.
+void Mode::calc_translate_to_bearing(float bearing_cd, float target_speed, float locked_heading_cd)
+{
+    if (!omni_translate_enabled()) {
+        // not an omni frame (or lateral disabled): fall back to the normal
+        // heading based behaviour handled by the caller
+        g2.motors.set_lateral(0);
+        return;
+    }
+
+    // hold the bow at the requested heading instead of turning towards the target
+    calc_steering_to_heading(locked_heading_cd);
+
+    // angle between where the bow points and where we actually want to go
+    const float error_rad = radians(wrap_180_cd(bearing_cd - locked_heading_cd) * 0.01f);
+
+    // split the desired ground velocity into body frame surge and sway.
+    // positive sway is to the right of the bow, positive surge is forward.
+    // Using ONE speed->percent mapping for both channels keeps their response
+    // identical, so the craft travels in a straight line to the waypoint
+    // instead of bowing out into an arc (surge and sway with different
+    // controller dynamics curve the path).
+    const float speed_max = MAX(calc_speed_max(g.speed_cruise, g.throttle_cruise * 0.01f), 0.1f);
+    const float speed_ratio = constrain_float(target_speed / speed_max, -1.0f, 1.0f);
+
+    const float surge_pct = speed_ratio * cosf(error_rad) * 100.0f;
+    const float sway_pct  = speed_ratio * sinf(error_rad) * 100.0f;
+
+    // send the two body-frame components straight to the motor library.
+    // Do NOT route surge through calc_throttle(): that speed PID clamps
+    // reverse output to zero unless braking is enabled, which would leave the
+    // craft stuck when the waypoint is behind/sideways of the bow.
+    //
+    // The lateral sign is inverted: a positive lateral command drives this
+    // X-frame to the LEFT of the bow, so the opposite sign is sent to make a
+    // waypoint on the left produce leftward translation.
+    g2.motors.set_throttle(surge_pct);
+    g2.motors.set_lateral(-g2.omni_lat_pct * 0.01f * sway_pct);
 }
 
 void Mode::set_steering(float steering_value)
