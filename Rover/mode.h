@@ -229,17 +229,17 @@ protected:
     class RC_Channel *&channel_walking_height;
     class AR_AttitudeControl &attitude_control;
 
-    // private members for waypoint navigation
-    float _distance_to_destination; // straight-line distance from vehicle to final destination in meters
-    bool _reached_destination;  // true once the vehicle has reached the destination
-    float _desired_yaw_cd;      // desired yaw in centi-degrees.  used in Auto, Guided and Loiter
+    // 航点导航的私有成员
+    float _distance_to_destination; // 车辆到最终目标点的直线距离（米）
+    bool _reached_destination;  // 车辆到达目标后置真
+    float _desired_yaw_cd;      // 期望航向（百分之一度）。用于 Auto、Guided 和 Loiter
 
-    // heading the bow is held at while translating on omni frames.
-    // Captured at the start of each leg and kept for the rest of the leg.
+    // 全向机架平移时锁定的船头航向。
+    // 在每段航程开始时捕获，并在整段航程中保持。
     float _omni_heading_cd = 0.0f;
     bool _omni_leg_valid = false;
 
-    // location of the waypoint the current omni-tranlation leg is heading to
+    // 当前全向平移航程所驶向的航点位置
     int32_t _omni_leg_lat = 0;
     int32_t _omni_leg_lng = 0;
 };

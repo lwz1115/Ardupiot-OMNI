@@ -59,11 +59,20 @@ SimRover::SimRover(const char *frame_str) :
     omnix = strstr(frame_str, "omnix") != nullptr;
     if (omnix) {
         printf("OmniX 4-thruster Rover/Boat Simulation Started\n");
-        // optional heading drift in deg/s, e.g. --model rover-omnix:yawdrift=5
+        // 可选的偏航漂移（度/秒），例如 --model rover-omnix:yawdrift=5
+        // 注意：在模型字符串中添加 ":yawdrift=N" 会让 SITL 跳过该载具的
+        // ROMFS 默认参数加载，因此你依赖的任何参数都必须显式设置
+        //（例如通过脚本）。
         const char *p = strstr(frame_str, "yawdrift=");
         if (p != nullptr) {
-            omnix_yaw_drift = atof(p + strlen("yawdrift="));
-            printf("OmniX yaw drift %.1f deg/s\n", omnix_yaw_drift);
+            const float drift = atof(p + strlen("yawdrift="));
+            if (isfinite(drift)) {
+                omnix_yaw_drift = drift;
+            } else {
+                // atof() 对非数字输入返回 0，会静默禁用漂移；改为上报
+                printf("OmniX: invalid yawdrift value, ignored\n");
+            }
+            printf("OmniX yaw drift %.1f deg/s\n", (double)omnix_yaw_drift);
         }
     }
 
@@ -232,10 +241,12 @@ void SimRover::update_ackermann_or_skid(const struct sitl_input &input, float de
  */
 void SimRover::update_omni3(const struct sitl_input &input, float delta_time)
 {
-    // in omni3 mode the first three servos are motor speeds
+    // omni3 模式下，前三个伺服信号为电机速度
 
-    // use forward kinematics to calculate body frame velocity
-    Vector3f wheel_ang_vel;
+// 使用正运动学计算机体坐标系速度
+    // 注意：必须做值初始化——当 battery_is_empty() 为真时下面的循环被
+    // 完全跳过，而该向量会在下方的 Minv * wheel_ang_vel 运动学中被原样使用。
+    Vector3f wheel_ang_vel{};
     battery_current = 0.0f;
     if (!battery_is_empty()) {
         for (uint8_t i=0; i<3; i++) {
@@ -298,38 +309,34 @@ void SimRover::update_omni3(const struct sitl_input &input, float delta_time)
 }
 
 /*
-  update the omniX rover/boat simulation by one time step
+  按一个时间步长更新 omniX 车/船仿真
 
-  omniX is an X-shaped frame with 4 thrusters mounted at fixed 45
-  degree angles (one in each corner, thrusting outward).  This is the
-  same geometry as AP_MotorsUGV FRAME_TYPE_OMNIX:
+  omniX 是 X 形机架，装有 4 个以固定 45 度角安装的推进器（每个角落一个，
+  朝外推进）。这与 AP_MotorsUGV FRAME_TYPE_OMNIX 的几何结构相同：
 
-    motor 0 : right-front thruster, pointing outward-right
-    motor 1 : left-front  thruster, pointing outward-left
-    motor 2 : right-rear  thruster, pointing outward-right
-    motor 3 : left-rear   thruster, pointing outward-left
+    电机 0 : 右前推进器，朝外右方推进
+    电机 1 : 左前推进器，朝外左方推进
+    电机 2 : 右后推进器，朝外右方推进
+    电机 3 : 左后推进器，朝外左方推进
 
-  Each thruster contributes a body-frame force:
+  每个推进器贡献一个机体坐标系力：
 
-    f_i = T_i * [ cos(45deg) * sign_x_i
-                , sin(45deg) * sign_y_i ]
+    f_i = T_i * [ cos(45度) * sign_x_i
+                , sin(45度) * sign_y_i ]
 
-  where sign_x_i/sign_y_i encode the thruster's fixed orientation.
-  The four thrusters combine to give surge, sway and yaw freedom, so
-  the vehicle can move in any direction without turning.
+  其中 sign_x_i/sign_y_i 编码推进器的固定朝向。
+  四个推进器合力提供前后（surge）、左右（sway）与偏航（yaw）自由度，
+  因此车辆无需转向即可向任意方向移动。
 
-  The sign conventions below are chosen so that positive throttle
-  commands from AP_MotorsUGV produce forward motion, positive
-  steering produces clockwise (right turn) yaw and positive lateral
-  produces motion to the right, matching the mixing factors in
-  AP_MotorsUGV::setup_omni().
+  下面的符号约定与 AP_MotorsUGV::setup_omni() 的混合系数一致：正的
+  油门指令产生前进，正的转向产生顺时针（右转）偏航，正的横向产生向右
+  运动。
  */
 void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
 {
-    // The default Rover/Boat OmniX configuration uses the four thruster outputs
-    // on servo channels 1..4 as motor functions 33..36.  This simulator assumes
-    // that mapping unless a user reassigns those functions elsewhere.  Any
-    // remapping should be reflected in the same way in the model.
+    // 默认的 Rover/Boat OmniX 配置将四个推进器输出映射到伺服通道 1..4，
+    // 对应电机功能 33..36。除非用户在其他地方重映射这些功能，本仿真器
+    // 假定这一映射。任何重映射都应以相同方式反映到模型中。
     float thr[4] {};
     battery_current = 0.0f;
     if (!battery_is_empty()) {
@@ -340,49 +347,50 @@ void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
         }
     }
 
-    // AP_MotorsUGV::output_omni() uses the following mixer:
+    // AP_MotorsUGV::output_omni() 使用以下混合器：
     //  m0 = t - s - l
     //  m1 = t - s + l
     //  m2 = t + s - l
     //  m3 = t + s + l
-    // Invert this to obtain the body-frame commands used by the sim.
-    const float throttle_cmd = 0.25f * (thr[0] + thr[1] + thr[2] + thr[3]);
-    const float steering_cmd  = 0.25f * (-thr[0] - thr[1] + thr[2] + thr[3]);
-    const float lateral_cmd   = 0.25f * (-thr[0] + thr[1] - thr[2] + thr[3]);
+    // 求逆以获得仿真使用的机体坐标系指令。
+    // t、s、l 各自在混合矩阵的每一列中出现一次 +1 和一次 -1，
+    // 因此逆矩阵为转置矩阵乘以 1/4（= 1/电机数）。
+    const float inv_mix_scale = 0.25f;
+    const float throttle_cmd  = inv_mix_scale * ( thr[0] + thr[1] + thr[2] + thr[3]);
+    const float steering_cmd  = inv_mix_scale * (-thr[0] - thr[1] + thr[2] + thr[3]);
+    const float lateral_cmd   = inv_mix_scale * (-thr[0] + thr[1] - thr[2] + thr[3]);
 
     const float surge_target = throttle_cmd * omnix_max_speed;
-    // On this X-frame a positive lateral command produces motion to the LEFT of
-    // the bow (body-frame -y), so negate it to model the real vehicle.
+    // 注意：此处符号必须与 AP_MotorsUGV::setup_omni()（FRAME_TYPE_OMNIX）
+    // 一致：正的横向指令产生向船头左侧的运动（机体坐标系 -y），因此取反
+    // 以模拟真实车辆。未经与真实船交叉验证，不要移除这个取反——移除它会
+    // 使所有侧向穿梭平移反向。
     const float sway_target  = -lateral_cmd * omnix_max_lateral_speed;
     const float yaw_target   = steering_cmd * radians(omnix_max_yaw_rate);
 
-    // current body-frame velocity
+    // 当前机体坐标系速度
     Vector3f velocity_body = dcm.transposed() * velocity_ef;
 
-    // very crude first-order throttle model.  A pure proportional
-    // accel = gain * (target - velocity) makes the steady-state speed equal
-    // to the commanded target speed.  Adding a separate linear damping term
-    // here would pull the steady state down to a fraction of the target
-    // (e.g. only ~45% with the old damping gain), which made the boat much
-    // slower than requested.  With target = 0 the same model still gives a
-    // natural exponential glide to a halt, like a real boat with drag.
+    // 非常粗略的一阶油门模型。纯比例 accel = gain * (target - velocity)
+    // 使稳态速度等于指令的目标速度。若在此处额外加入线性阻尼项，会把稳态
+    // 拉到目标速度的一小部分（例如旧阻尼增益下仅约 45%），使船远慢于预期。
+    // 当 target = 0 时，同一模型仍给出自然的指数滑行停车，如同真实带阻力的船。
     const float surge_scale = MAX(omnix_max_speed, 0.1f);
     const float sway_scale  = MAX(omnix_max_lateral_speed, 0.1f);
     float accel_x = omnix_max_accel * (surge_target - velocity_body.x) / surge_scale;
     float accel_y = omnix_max_accel * (sway_target - velocity_body.y) / sway_scale;
 
-    // Use angular acceleration and integrate it, rather than applying a rate
-    // lag directly. This gives the vehicle rotational inertia and a physically
-    // more realistic response to steering commands.
+    // 使用角加速度并对其积分，而不是直接施加角速率滞后。
+    // 这给车辆旋转惯性，并对转向指令产生更物理、更真实的响应。
     const float yaw_rate = gyro.z;
     const float yaw_accel = (yaw_target - yaw_rate) * radians(omnix_max_yaw_accel)
                           / MAX(radians(omnix_max_yaw_rate), 0.1f)
                           - omnix_yaw_damping * yaw_rate;
     const float new_yaw_rate = yaw_rate + yaw_accel * delta_time;
 
-    // set gyro and update attitude
-    // the optional yaw drift is a constant rotation rate (like a boat being
-    // turned by a current) superimposed on the command-driven yaw rate
+    // 设置陀螺并更新姿态
+    // 可选的偏航漂移是一个恒定的旋转速率（像船被水流推转），叠加在指令
+    // 驱动的偏航速率之上
     gyro = Vector3f(0, 0, new_yaw_rate + radians(omnix_yaw_drift));
     dcm.rotate(gyro * delta_time);
     dcm.normalize();

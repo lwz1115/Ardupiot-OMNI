@@ -501,6 +501,21 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_packet(const mavlink_command_in
         }
         return MAV_RESULT_FAILED;
 
+    case MAV_CMD_USER_1:
+        // param1: 1 = 停止穿梭, 0 = 查询当前状态
+        if (rover.g2.shuttle.enabled()) {
+            if (is_positive(packet.param1)) {
+                rover.g2.shuttle.stop(AP_Shuttle::StopReason::GCS_REQUEST);
+                if (rover.set_mode(rover.mode_loiter, ModeReason::GCS_COMMAND)) {
+                    return MAV_RESULT_ACCEPTED;
+                }
+                return MAV_RESULT_FAILED;
+            }
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "SHUTTLE_STATE %u", (unsigned)rover.g2.shuttle.get_state());
+            return MAV_RESULT_ACCEPTED;
+        }
+        return MAV_RESULT_UNSUPPORTED;
+
     default:
         return GCS_MAVLINK::handle_command_int_packet(packet, msg);
     }
@@ -508,6 +523,22 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_packet(const mavlink_command_in
 
 MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_do_reposition(const mavlink_command_int_t &packet)
 {
+    // ---- 穿梭钩子：在任何状态改变之前先校验航程 ----
+    // 注意：我们刻意不在这里启动航程。航程只有在车辆确实进入 GUIDED
+    // 且新目标已被接受之后才启动，因此穿梭状态绝不会与车辆状态不一致
+    //（例如模式切换或位置设置失败时）。
+    const bool shuttle_wants_leg = rover.g2.shuttle.enabled();
+    if (shuttle_wants_leg) {
+        Location target {};
+        if (!location_from_command_t(packet, target)) {
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_LOC");
+            return MAV_RESULT_DENIED;
+        }
+        if (!rover.g2.shuttle.validate_leg(target)) {
+            return MAV_RESULT_DENIED;   // SHUTTLE_ERR_DIST 已上报
+        }
+    }
+
     const bool change_modes = ((int32_t)packet.param2 & MAV_DO_REPOSITION_FLAGS_CHANGE_MODE) == MAV_DO_REPOSITION_FLAGS_CHANGE_MODE;
     if (!rover.control_mode->in_guided_mode() && !change_modes) {
         return MAV_RESULT_DENIED;
@@ -528,15 +559,26 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_do_reposition(const mavlink_com
         }
     }
 
+    // 先设置目标，后设置速度。对船来说 ModeGuided::_enter() 以 Loiter
+    // 子模式启动，只有 set_desired_location() 才能切换到 waypoint 子模式。
+    // ModeLoiter 没有速度控制，基类实现会返回 false，因此若先设置速度，
+    // 在船上总会以 MAV_RESULT_FAILED 失败。
+    if (!rover.mode_guided.set_desired_location(requested_location)) {
+        return MAV_RESULT_FAILED;
+    }
+
+    // 速度采用尽力而为：若设置失败，车辆仍保留先前设置的（默认）速度并
+    // 继续驶向新位置，因此这里若返回 FAILED，会把一个已部分生效的命令
+    // 上报为失败。改为警告并接受。
     if (is_positive(packet.param1)) {
         if (!rover.control_mode->set_desired_speed(packet.param1)) {
-            return MAV_RESULT_FAILED;
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "RepositionSpeedFail");
         }
     }
 
-    // set the destination
-    if (!rover.mode_guided.set_desired_location(requested_location)) {
-        return MAV_RESULT_FAILED;
+    // 所有状态更改均成功：现在才启动穿梭航程。
+    if (shuttle_wants_leg) {
+        rover.g2.shuttle.begin_leg(requested_location);
     }
 
     return MAV_RESULT_ACCEPTED;

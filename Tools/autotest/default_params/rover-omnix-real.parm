@@ -23,15 +23,24 @@ OMNI_YAW_HOLD 0
 
 # --- Heading source: UM982 dual-antenna RTK (no compass installed) ---
 # The EKF yaw must come from the GNSS moving-baseline heading, not a compass.
-GPS_TYPE 25            # Unicore moving-baseline NMEA (UM982 dual antenna)
+GPS1_TYPE 25           # Unicore moving-baseline NMEA (UM982 dual antenna)
 GPS_AUTO_CONFIG 1      # let ArduPilot configure the UM982 (baud 230400)
 SERIAL3_PROTOCOL 5     # UART1 = GPS serial port on CUAV V5
 SERIAL3_BAUD 230       # 230400, ArduPilot sets this on the UM982
 EK3_SRC1_YAW 2         # primary yaw source = GPS (dual-antenna heading)
 EK3_SRC2_YAW 8         # secondary yaw source = GSF (only when moving)
-# NOTE: set GPS_POS1_X/Y/Z and GPS_POS2_X/Y/Z (m, relative to IMU) once the
-# antennas are mounted, so the EKF position refers to the hull centre and the
-# boat stops on the waypoint instead of up to 45 cm away.
+# Assumption for the following offsets: UM982's primary/base antenna is at the
+# bow (+X), its second antenna is aft (-X), both on the centerline and level
+# with each other. The flight controller/IMU is at the hull center.
+GPS1_MB_TYPE 1         # custom moving-baseline offset (single dual-antenna GPS)
+GPS1_MB_OFS_X 0.60     # primary/front antenna relative to secondary/rear antenna
+GPS1_MB_OFS_Y 0
+GPS1_MB_OFS_Z 0
+GPS1_POS_X 0.30        # primary/front antenna position relative to IMU
+GPS1_POS_Y 0
+GPS1_POS_Z 0           # replace with measured vertical offset, positive down
+# If the UM982 primary/base antenna is the aft antenna instead, change the
+# signs: GPS1_MB_OFS_X=-0.60 and GPS1_POS_X=-0.30.
 
 # --- Four thrusters on output channels 1..4 (motor functions 33..36) ---
 SERVO1_FUNCTION 33
@@ -63,5 +72,15 @@ RC4_MAX 2000
 CRUISE_SPEED 1.5
 CRUISE_THROTTLE 50
 WP_SPEED 1.5
-WP_RADIUS 3
+# arrival radius: keep in sync with SHUTTLE_RAD so the stock GUIDED
+# arrival and the shuttle arrival agree
+WP_RADIUS 1
 WP_PIVOT_RATE 60
+
+# --- Two-point shuttle mode ---
+SHUTTLE_EN 1
+SHUTTLE_RAD 1.0
+SHUTTLE_SPD 0.2
+SHUTTLE_MIN 0.5
+SHUTTLE_MAX 5000
+SHUTTLE_CRUISE 1.0

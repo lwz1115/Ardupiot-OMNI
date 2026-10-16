@@ -279,6 +279,12 @@ bool Rover::set_mode(Mode &new_mode, ModeReason reason)
 
     old_mode.exit();
 
+    // 穿梭模式：检测驾驶员切换到人工模式接管，并锁定穿梭状态
+    // 直到 QGC 启动新航程
+    if (g2.shuttle.enabled() && g2.shuttle.is_active() && is_manual_mode(new_mode.mode_number())) {
+        g2.shuttle.on_manual_override();
+    }
+
     control_mode_reason = reason;
 #if HAL_LOGGING_ENABLED
     logger.Write_Mode((uint8_t)control_mode->mode_number(), control_mode_reason);
@@ -303,6 +309,15 @@ bool Rover::set_mode(Mode::Number new_mode, ModeReason reason)
         return false;
     }
     return rover.set_mode(*mode, reason);
+}
+
+// returns true if the mode is pilot controlled (manual) rather than autonomous
+bool Rover::is_manual_mode(Mode::Number mode) const
+{
+    return mode == Mode::Number::MANUAL ||
+           mode == Mode::Number::ACRO ||
+           mode == Mode::Number::STEERING ||
+           mode == Mode::Number::SIMPLE;
 }
 
 void Rover::startup_INS(void)

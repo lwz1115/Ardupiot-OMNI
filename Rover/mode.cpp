@@ -439,50 +439,70 @@ void Mode::navigate_to_waypoint()
     float desired_heading_cd = g2.wp_nav.oa_wp_bearing_cd();
 
     if (omni_translate_enabled()) {
-        // hold the bow steady and reach the waypoint by translating.  The
-        // heading is captured once per leg (whenever the target location
-        // changes) and then held, so the craft never turns around.
-        const Location &wp_dest = g2.wp_nav.get_destination();
-        if (!_omni_leg_valid ||
-            wp_dest.lat != _omni_leg_lat || wp_dest.lng != _omni_leg_lng) {
-            _omni_leg_lat = wp_dest.lat;
-            _omni_leg_lng = wp_dest.lng;
-            _omni_heading_cd = ahrs.yaw_sensor;
-            _omni_leg_valid = true;
+        // 全向平移导航：全程跟随 SCurve 的世界系期望速度，不绕过它。
+        //
+        // 用 pos_control.get_vel_target()（位置误差 P 纠偏 + SCurve 前馈，
+        // 即"指向目标且修正横偏"的世界系速度，m/s）。把它按比例映射成
+        // 推力驱动电机，船就能跟随 SCurve：巡航保持速度、到点平滑减速、
+        // 途经点(fast)保持速度路过。船一直按 SCurve 的速度运动，SCurve
+        // 的 track_scalar_dt 不会塌陷，s_finished 能正常置位 —— 到达判定
+        // 完全由原生 reached_destination() 负责，不需要任何 hack。
+        //
+        // 到达语义（原生 AR_WPNav::reached_destination）：
+        //   - 普通航点：停稳(near_wp) 或 冲过终点线(past_wp) 都算到达；
+        //   - 途经点(fast waypoint)：SCurve 规划"路过不停"，直飞下一航点。
+        // 穿梭模式的到达悬停由 AP_Shuttle + loiter 单独处理，不受影响。
+
+        // 世界系期望速度（含纠偏），按 pos_control 的速度上限映射成推力。
+        const Vector2f vel_ne = g2.pos_control.get_vel_target();
+        const float speed_cmd = vel_ne.length();
+
+        // 锁船头（若机架可偏航）或完全关闭转向（无偏航硬件）。
+        if (g2.omni_yaw_hold > 0) {
+            calc_steering_to_heading(_omni_heading_cd);
+        } else {
+            g2.motors.set_steering(0);
         }
 
-        // Do NOT use g2.wp_nav.get_speed(): it is computed for a
-        // differential-drive vehicle that slows to (near) zero while it turns
-        // towards the target, which on an omni frame would stop the craft
-        // whenever the waypoint is at a large angle to the bow.  An omni
-        // vehicle translates, so it should travel at the intended cruise speed
-        // regardless of the bearing error, decelerating only as it nears the
-        // waypoint so it can stop on target.
-        //
-        // Use get_speed_max() (the value set by DO_CHANGE_SPEED mission
-        // commands) rather than get_default_speed() (the WP_SPEED parameter),
-        // so a speed configured inside the mission (e.g. 1 m/s) is honoured.
-        const float cruise_speed = MAX(g2.wp_nav.get_speed_max(), 0.1f);
-        const float dist = _distance_to_destination;
-        const float stop_dist = MAX(attitude_control.get_stopping_distance(cruise_speed), 0.5f);
-        const float omni_speed = (dist < stop_dist)
-                                 ? MAX(cruise_speed * (dist / stop_dist), 0.05f)
-                                 : cruise_speed;
+        if (g2.wp_nav.reached_destination()) {
+            // SCurve 原生判定到达：断开推力，避免在航点上用近零向量
+            // 继续驱动造成原地抽搐。
+            g2.motors.set_throttle(0);
+            g2.motors.set_lateral(0);
+            return;
+        }
 
-        calc_translate_to_bearing(desired_heading_cd, omni_speed, _omni_heading_cd);
+        // 世界系 NE 速度 → 船体系 surge(前)/sway(右)：
+        //   前向  = N·cos(yaw) + E·sin(yaw)
+        //   右向  = -N·sin(yaw) + E·cos(yaw)
+        const float yaw_rad = radians(ahrs.yaw_sensor * 0.01f);
+        const float surge_ms =  vel_ne.x * cosf(yaw_rad) + vel_ne.y * sinf(yaw_rad);
+        const float sway_ms  = -vel_ne.x * sinf(yaw_rad) + vel_ne.y * cosf(yaw_rad);
+
+        // 速度→推力映射：用 pos_control 同一速度上限（与 vel_ne 同源，
+        // 保证 100% 推力 ≈ 期望速度上限）；方向由 surge/sway 归一化给出。
+        // 不在此处做任何"近零速度切断"，船跟随 SCurve 自然减速到航点。
+        const float speed_max = MAX(g2.pos_control.get_speed_max(), 0.1f);
+        const float ratio = constrain_float(speed_cmd / speed_max, -1.0f, 1.0f);
+        const float inv_speed = 1.0f / MAX(speed_cmd, 1e-3f);
+
+        // surge 直通油门；sway 经 OMNI_LAT_PCT 缩放、符号反转（正 lateral
+        // 驱动 X 型机架向左），使世界系合力指向目标。
+        g2.motors.set_throttle(ratio * surge_ms * inv_speed * 100.0f);
+        g2.motors.set_lateral(-g2.omni_lat_pct * ratio * sway_ms * inv_speed * 100.0f);
         return;
     }
 
     _omni_leg_valid = false;
 
-    // pass desired speed to throttle controller
-    // do not do simple avoidance because this is already handled in the position controller
+    // 将期望速度传给油门控制器
+    // 不进行简单避障，因为该逻辑已在位置控制器中处理
     calc_throttle(g2.wp_nav.get_speed(), false);
 
     if (g2.sailboat.use_indirect_route(desired_heading_cd)) {
-        // sailboats use heading controller when tacking upwind
+        // 帆船在迎风换舷时使用航向控制器
         desired_heading_cd = g2.sailboat.calc_heading(desired_heading_cd);
-        // use pivot turn rate for tacks
+        // 换舷时使用枢轴转向率
         const float turn_rate = g2.sailboat.tacking() ? g2.wp_nav.get_pivot_rate() : 0.0f;
         calc_steering_to_heading(desired_heading_cd, turn_rate);
     } else {
@@ -545,60 +565,54 @@ void Mode::calc_steering_to_heading(float desired_heading_cd, float rate_max_deg
     set_steering(steering_out * 4500.0f);
 }
 
-// true if this mode should translate sideways instead of turning towards the target
+// 当该模式应当横向平移而不是转向目标时返回 true
 bool Mode::omni_translate_enabled() const
 {
     return g2.motors.is_omni() && g2.omni_lat_pct > 0;
 }
 
-// drive towards a bearing on omni frames while holding the bow steady.
-// The requested ground velocity vector is rotated into the body frame and
-// split into surge and sway so the craft can crab sideways across the map
-// without changing heading.
+// 在全向机架上保持船头稳定地驶向某方位角。
+// 将期望的地面速度向量旋转到机体坐标系，并分解为前后（surge）与
+// 左右（sway）两个分量，使船身无需改变航向即可在地图上横移。
 void Mode::calc_translate_to_bearing(float bearing_cd, float target_speed, float locked_heading_cd)
 {
     if (!omni_translate_enabled()) {
-        // not an omni frame (or lateral disabled): fall back to the normal
-        // heading based behaviour handled by the caller
+        // 不是全向机架（或横向被禁用）：回退到调用方处理的普通航向行为
         g2.motors.set_lateral(0);
         return;
     }
 
-    // Hold the bow steady only if the frame can actually yaw.  On frames whose
-    // thrusters cancel their torque (e.g. radially mounted props) the heading
-    // drifts freely, so a steering command would only inject unwanted thrust.
+    // 仅当机架确实能够偏航时才保持船头稳定。在推进器力矩相互抵消的
+    // 机架上（例如径向安装的螺旋桨），航向会自由漂移，此时转向指令只会
+    // 注入多余的推力。
     if (g2.omni_yaw_hold > 0) {
         calc_steering_to_heading(locked_heading_cd);
     } else {
         g2.motors.set_steering(0);
     }
 
-    // Decompose using the CURRENT heading, not the heading captured at the start
-    // of the leg.  surge/sway act in the body frame, so the resulting motion
-    // only points at the waypoint when the live heading is used.  This is
-    // essential on boats that cannot yaw and therefore drift in heading.
+    // 使用当前的航向进行分解，而不是航程开始时的捕获航向。surge/sway
+    // 作用于机体坐标系，因此只有在使用实时航向时，合成的运动才会真正
+    // 指向航点。这对于无法偏航、航向会漂移的船来说至关重要。
     const float error_rad = radians(wrap_180_cd(bearing_cd - ahrs.yaw_sensor) * 0.01f);
 
-    // split the desired ground velocity into body frame surge and sway.
-    // positive sway is to the right of the bow, positive surge is forward.
-    // Using ONE speed->percent mapping for both channels keeps their response
-    // identical, so the craft travels in a straight line to the waypoint
-    // instead of bowing out into an arc (surge and sway with different
-    // controller dynamics curve the path).
+    // 将期望的地面速度分解为机体坐标系的 surge 和 sway。
+    // 正的 sway 指向船头右侧，正的 surge 指向前方。
+    // 两个通道使用同一个速度->百分比映射，使二者响应一致，船才能直线
+    // 驶向航点，而不是弯出弧线（surge 与 sway 若使用不同控制器动态会
+    // 使路径弯曲）。
     const float speed_max = MAX(calc_speed_max(g.speed_cruise, g.throttle_cruise * 0.01f), 0.1f);
     const float speed_ratio = constrain_float(target_speed / speed_max, -1.0f, 1.0f);
 
     const float surge_pct = speed_ratio * cosf(error_rad) * 100.0f;
     const float sway_pct  = speed_ratio * sinf(error_rad) * 100.0f;
 
-    // send the two body-frame components straight to the motor library.
-    // Do NOT route surge through calc_throttle(): that speed PID clamps
-    // reverse output to zero unless braking is enabled, which would leave the
-    // craft stuck when the waypoint is behind/sideways of the bow.
+    // 将两个机体坐标系分量直接送到电机库。
+    // 不要将 surge 经 calc_throttle() 处理：该速度 PID 在未启用刹车时
+    // 会将倒车输出钳制为零，当航点位于船头后方或侧方时会使船卡住。
     //
-    // The lateral sign is inverted: a positive lateral command drives this
-    // X-frame to the LEFT of the bow, so the opposite sign is sent to make a
-    // waypoint on the left produce leftward translation.
+    // 横向符号取反：正的横向指令驱动该 X 型机架向船头左侧运动，因此发送
+    // 相反的符号，使位于左侧的航点产生向左的平移。
     g2.motors.set_throttle(surge_pct);
     g2.motors.set_lateral(-g2.omni_lat_pct * 0.01f * sway_pct);
 }

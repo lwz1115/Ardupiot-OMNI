@@ -68,6 +68,13 @@ public:
     // returns desired velocity vector (i.e. feed forward) in m/s in NE frame
     Vector2f get_desired_velocity() const;
 
+    // returns the velocity target in m/s in NE frame.  This includes the
+    // position-error correction from the P controller added to the SCurve
+    // feed-forward velocity, i.e. the "aimed at the destination, corrected
+    // for cross-track error" velocity.  Used by omni vehicles that drive
+    // directly in the world frame.
+    Vector2f get_vel_target() const { return _vel_target; }
+
     // return desired acceleration vector in m/s in NE frame
     Vector2f get_desired_accel() const;
 

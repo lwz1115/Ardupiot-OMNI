@@ -672,19 +672,22 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     AP_GROUPINFO("GUID_TIMEOUT", 62, ParametersG2, guided_timeout, 3.0),
 
     // @Param: OMNI_LAT_PCT
-    // @DisplayName: Omni lateral percentage
-    // @Description: Percentage of available lateral (sideways) thrust used by autonomous modes on omni frames such as OmniX. Set to zero to rely on steering only. Only used when FRAME_TYPE selects an omni frame.
+    // @DisplayName: 全向横向百分比
+    // @Description: OmniX 等全向机架上自动模式可使用的横向（侧向）推力百分比。设为 0 则仅依赖转向。仅在 FRAME_TYPE 选择全向机架时使用。
     // @Range: 0 100
     // @Increment: 1
     // @User: Advanced
     AP_GROUPINFO("OMNI_LAT_PCT", 63, ParametersG2, omni_lat_pct, 100),
 
     // @Param: OMNI_YAW_HOLD
-    // @DisplayName: Omni hold heading in auto modes
-    // @Description: Controls whether autonomous modes command a heading hold on omni frames. Set to 1 for frames that can yaw (bow is held steady while translating). Set to 0 for frames that cannot yaw (e.g. radially mounted thrusters), where the heading drifts with the water and steering commands would only inject unwanted thrust; the craft then translates purely by surge/sway using the live heading.
-    // @Values: 0:Disabled,1:Enabled
+    // @DisplayName: 自动模式下全向保持航向
+    // @Description: 控制自动模式是否在全向机架上命令保持航向。对于可偏航的机架设为 1（平移时保持船头稳定）。对于无法偏航的机架（如径向安装的推进器）设为 0，此时航向随水流漂移，转向指令只会注入多余推力；船仅使用实时航向通过 surge/sway 纯平移。
+    // @Values: 0:禁用,1:使能
     // @User: Advanced
     AP_GROUPINFO("OMNI_YAW_HOLD", 50, ParametersG2, omni_yaw_hold, 1),
+
+    // 两点穿梭模式参数（SHUTTLE_*）
+    AP_SUBGROUPINFO(shuttle, "SHUTTLE_", 32, ParametersG2, AP_Shuttle),
 
     AP_GROUPEND
 };

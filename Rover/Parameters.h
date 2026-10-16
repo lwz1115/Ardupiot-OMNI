@@ -9,6 +9,7 @@
 #include <AP_Follow/AP_Follow.h>
 #include <AP_Proximity/AP_Proximity.h>
 #include "AP_Rally.h"
+#include "AP_Shuttle.h"
 #include <AP_SmartRTL/AP_SmartRTL.h>
 #include <AP_Stats/AP_Stats.h>
 #include "AP_Torqeedo/AP_Torqeedo.h"
@@ -360,10 +361,10 @@ public:
     AP_Int8 loit_type;
     AP_Float loit_radius;
 
-    // percentage of lateral thrust available to autonomous modes on omni frames
+    // 全向机架上可供自动模式使用的横向推力百分比
     AP_Int16 omni_lat_pct;
 
-    // hold heading in autonomous modes on omni frames (0 = cannot yaw)
+    // 全向机架自动模式下是否保持航向（0 = 无法偏航）
     AP_Int8 omni_yaw_hold;
 
 #if HAL_SPRAYER_ENABLED
@@ -435,6 +436,9 @@ public:
 
     // GUIDED mode timeout
     AP_Float guided_timeout;
+
+    // 两点穿梭模式
+    AP_Shuttle shuttle;
 
     class ModeCircle mode_circle;
 };

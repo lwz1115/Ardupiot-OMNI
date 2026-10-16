@@ -112,6 +112,8 @@ public:
 
     friend class Sailboat;
 
+    friend class AP_Shuttle;
+
     Rover(void);
 
 private:
@@ -305,6 +307,8 @@ private:
     void ekf_check();
     bool ekf_over_threshold();
     bool ekf_position_ok();
+    // returns true if the given mode is pilot controlled (manual)
+    bool is_manual_mode(Mode::Number mode) const;
     void failsafe_ekf_event();
     void failsafe_ekf_off_event(void);
 

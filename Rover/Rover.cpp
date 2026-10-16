@@ -518,6 +518,9 @@ void Rover::update_current_mode(void)
     }
 
     control_mode->update();
+
+    // 两点穿梭状态机（到达检测、故障保护退出）
+    g2.shuttle.update();
 }
 
 // vehicle specific waypoint info helpers
