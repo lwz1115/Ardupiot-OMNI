@@ -20,143 +20,112 @@
 
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/10598/badge)](https://www.bestpractices.dev/projects/10598)
 
-ArduPilot is the most advanced, full-featured, and reliable open source autopilot software available.
-It has been under development since 2010 by a diverse team of professional engineers, computer scientists, and community contributors.
-Our autopilot software is capable of controlling almost any vehicle system imaginable, from conventional airplanes, quad planes, multi-rotors, and helicopters to rovers, boats, balance bots, and even submarines.
-It is continually being expanded to provide support for new emerging vehicle types.
 
-## The ArduPilot project is made up of
+## OmniX 全向船 · 自主全向导航固件（v1.0.1）
 
-- ArduCopter: [code](https://github.com/ArduPilot/ardupilot/tree/master/ArduCopter), [wiki](https://ardupilot.org/copter/index.html)
+![OmniX 全向船实物](11.jpg)
 
-- ArduPlane: [code](https://github.com/ArduPilot/ardupilot/tree/master/ArduPlane), [wiki](https://ardupilot.org/plane/index.html)
+本项目在 **ArduPilot Rover 4.8.0-dev** 基础上，为 **OmniX X 型四推进器全向船** 构建了
+完整的 **自主全向导航** 方案：船体无需转向（无偏航自由度），即可向任意方向平移、
+自主到达任意航点、执行两点穿梭任务。已通过水上实测验证。
 
-- Rover: [code](https://github.com/ArduPilot/ardupilot/tree/master/Rover), [wiki](https://ardupilot.org/rover/index.html)
+---
 
-- ArduSub : [code](https://github.com/ArduPilot/ardupilot/tree/master/ArduSub), [wiki](http://ardusub.com/)
+## 一、功能介绍
 
-- Antenna Tracker : [code](https://github.com/ArduPilot/ardupilot/tree/master/AntennaTracker), [wiki](https://ardupilot.org/antennatracker/index.html)
+| 功能 | 说明 |
+|:--|:--|
+| **自主全向导航（AUTO）** | 船头方向固定不动，仅靠四个（X 型 45°）推进器合力，向任意方向平滑平移到达航点 |
+| **任意方向横移** | 前、后、左、右、斜向随意平移（surge + sway 合成），无需掉头或转向 |
+| **两点穿梭模式（AP_Shuttle）** | 按 QGC 的 DO_REPOSITION 指令在两点间自动往返，到点悬停，支持手动接管检测 |
+| **世界系直驱导航** | 全程跟随 SCurve 的世界系期望速度（位置误差 P 纠偏 + 平滑加减速），到达判定与原生一致 |
+| **双天线 RTK 航向（无罗盘）** | UM982 双天线提供精确航向（GPS1_MB 配置），摆脱对磁罗盘的依赖 |
+| **SITL 仿真支持** | 内置 OmniX 船的动力学仿真模型（sim rover-omnix），可在无硬件时验证整套逻辑 |
 
-## User Support & Discussion Forums
+---
 
-- Support Forum: <https://discuss.ardupilot.org/>
+## 二、与原版 OmniX 船体的对比（重点不同）
 
-- Community Site: <https://ardupilot.org>
+> 我们针对自己的船体做了大量针对性修改，与原版 OmniX 有本质区别：
 
-## Developer Information
+| 对比项 | 原版 OmniX | **本项目 OmniX 船** |
+|:--|:--|:--|
+| **运动方式** | 原地转向 + 前进（转向依赖偏航） | **不转向！船头固定，全靠全向平移** |
+| **偏航自由度** | 有（可自旋，靠 pivot 原地转向） | **无**（径向推进器力矩相互抵消，不能自旋） |
+| **航向来源** | 磁罗盘 | **UM982 双天线 RTK 航向**（无磁罗盘） |
+| **导航驱动力** | 航向 + 油门（L1/转向控制） | **世界系速度直驱**（surge/sway 分解，绕过转向） |
+| **到达判定** | 转弯接近 + 半径 | **原生 SCurve reached_destination**（无需 hack） |
+| **pivot 转向** | 可用（WP_PIVOT_ANGLE） | **必须禁用！**（WP_PIVOT_ANGLE=0，否则 SCurve 被冻结 → 零推力） |
+| **任务形态** | 通用航点 | 航点 + **两点穿梭专用状态机** |
 
-- Github repository: <https://github.com/ArduPilot/ardupilot>
+---
 
-- Main developer wiki: <https://ardupilot.org/dev/>
+## 三、我们做了什么修改
 
-- Developer discussion: <https://discuss.ardupilot.org>
+在 ArduPilot Rover 基础上，为支撑"无偏航全向船自主导航"，我们对以下部分做了**大量修改**：
 
-- Developer chat: <https://discord.com/channels/ardupilot>
+### 1. 核心导航 — `Rover/mode.cpp`
+新增 `omni_translate_enabled()` 分支（`navigate_to_waypoint()`）：
+- 直接读取 **`g2.pos_control.get_vel_target()`**（SCurve 世界系期望速度 + 位置 P 纠偏），
+  按比例映射为 `set_throttle` / `set_lateral` 驱动四推进器；
+- 用实时航向（`ahrs.yaw_sensor`）把世界系速度旋转到船体系分量（surge/sway）；
+- 到达判定统一用**原生 `wp_nav.reached_destination()`**，彻底告别 V4/V5 的手写停止 hack。
 
-## Top Contributors
+### 2. 位置控制器扩展 — `libraries/APM_Control/AR_PosControl.h`
+新增 **`get_vel_target()`** 访问器，供全向船读取原生位置控制器的世界系目标速度。
+> 这是让 omni 船能用上 ArduPilot 原生 SCurve 位置控制的唯一桥接改动。
 
-- [Flight code contributors](https://github.com/ArduPilot/ardupilot/graphs/contributors)
-- [Wiki contributors](https://github.com/ArduPilot/ardupilot_wiki/graphs/contributors)
-- [Most active support forum users](https://discuss.ardupilot.org/u?order=post_count&period=quarterly)
-- [Partners who contribute financially](https://ardupilot.org/about/Partners)
+### 3. 全新两点穿梭模式 — `Rover/AP_Shuttle.{h,cpp}`
+- 状态机：`IDLE / TASK / MOVING / HOVER / MANUAL_MODE`；
+- `GCS_MAVLink_Rover.cpp` 中 `handle_command_int_do_reposition()` 对接：
+  穿梭校验 → 进入 GUIDED → 设置目标点/速度 → 到点悬停 → 手动接管监测。
 
-## How To Get Involved
+### 4. 参数与集成
+- 新增 `SHUTTLE_` 参数组（`Parameters.cpp/h`）；
+- `Rover.cpp/h`、`system.cpp`：模式切换钩子 + 主循环 `shuttle.update()`；
+- `OMNI_YAW_HOLD`、`OMNI_LAT_PCT` 等参数中文注释与行为约束。
 
-- The ArduPilot project is open source and we encourage participation and code contributions: [guidelines for contributors to the ardupilot codebase](https://ardupilot.org/dev/docs/contributing.html)
+### 5. SITL 仿真 — `libraries/SITL/SIM_Rover.cpp`
+- 新增 **OmniX 4 推进器船动力学模型**（`update_omnix()`）：正/逆混合、偏航惯性、
+  可选偏航漂移（`rover-omnix:yawdrift=N`）；
+- 配套真机参数文件：`Tools/autotest/default_params/rover-omnix-real.parm`。
 
-- We have an active group of Beta Testers to help us improve our code: [release procedures](https://ardupilot.org/dev/docs/release-procedures.html)
+---
 
-- Desired Enhancements and Bugs can be posted to the [issues list](https://github.com/ArduPilot/ardupilot/issues).
+## 四、代码结构速览
 
-- Help other users with log analysis in the [support forums](https://discuss.ardupilot.org/)
+```
+Rover/mode.cpp                        全向平移导航（omni_translate_enabled 分支）
+Rover/AP_Shuttle.h / .cpp             两点穿梭模式状态机
+Rover/GCS_MAVLink_Rover.cpp           DO_REPOSITION 穿梭指令处理
+libraries/APM_Control/AR_PosControl.h get_vel_target() 访问器
+libraries/SITL/SIM_Rover.cpp          OmniX 船 SITL 动力学模型
+Tools/autotest/default_params/rover-omnix-real.parm   真机参数
+```
 
-- Improve the wiki and chat with other [wiki editors on Discord #documentation](https://discord.com/channels/ardupilot)
+## 五、构建 & 运行
 
-- Contact the developers on one of the [communication channels](https://ardupilot.org/copter/docs/common-contact-us.html)
+```bash
+# 真机固件（CUAVv5）
+./waf configure --board CUAVv5
+./waf build --targets bin/ardurover
 
-## License
+# SITL 仿真
+./waf configure --board sitl
+./waf build --targets bin/ardurover
+build/sitl/bin/ardurover --model rover-omnix --home 31.230562,120.637009,0,0
+```
 
-The ArduPilot project is licensed under the GNU General Public
-License, version 3.
+---
 
-- [Overview of license](https://ardupilot.org/dev/docs/license-gplv3.html)
+## 验证状态
 
-- [Full Text](https://github.com/ArduPilot/ardupilot/blob/master/COPYING.txt)
+- ✅ **v1.0.1（2026-10-16）水上实测通过**：
+  - 两航点直线航行任务 ✓
+  - 三航点 C 型运动任务 ✓
+- ✅ SITL 仿真全流程验证
+- 标签：`v1.0.1-自主全向导航已验证`
 
-## Maintainers
+---
 
-ArduPilot is comprised of several parts, vehicles and boards. The list below
-contains the people that regularly contribute to the project and are responsible
-for reviewing patches on their specific area.
-
-- [Andrew Tridgell](https://github.com/tridge):
-  - ***Vehicle***: Plane, AntennaTracker
-  - ***Board***: Pixhawk, Pixhawk2, PixRacer
-- [Francisco Ferreira](https://github.com/oxinarf):
-  - ***Bug Master***
-- [Grant Morphett](https://github.com/gmorph):
-  - ***Vehicle***: Rover
-- [Willian Galvani](https://github.com/williangalvani):
-  - ***Vehicle***: Sub
-  - ***Board***: Navigator
-- [Michael du Breuil](https://github.com/WickedShell):
-  - ***Subsystem***: Batteries
-  - ***Subsystem***: GPS
-  - ***Subsystem***: Scripting
-- [Peter Barker](https://github.com/peterbarker):
-  - ***Subsystem***: DataFlash, Tools
-- [Randy Mackay](https://github.com/rmackay9):
-  - ***Vehicle***: Copter, Rover, AntennaTracker
-- [Siddharth Purohit](https://github.com/bugobliterator):
-  - ***Subsystem***: CAN, Compass
-  - ***Board***: Cube*
-- [Tom Pittenger](https://github.com/magicrub):
-  - ***Vehicle***: Plane
-- [Bill Geyer](https://github.com/bnsgeyer):
-  - ***Vehicle***: TradHeli
-- [Emile Castelnuovo](https://github.com/emilecastelnuovo):
-  - ***Board***: VRBrain
-- [Georgii Staroselskii](https://github.com/staroselskii):
-  - ***Board***: NavIO
-- [Gustavo José de Sousa](https://github.com/guludo):
-  - ***Subsystem***: Build system
-- [Julien Beraud](https://github.com/jberaud):
-  - ***Board***: Bebop & Bebop 2
-- [Leonard Hall](https://github.com/lthall):
-  - ***Subsystem***: Copter attitude control and navigation
-- [Matt Lawrence](https://github.com/Pedals2Paddles):
-  - ***Vehicle***: 3DR Solo & Solo based vehicles
-- [Matthias Badaire](https://github.com/badzz):
-  - ***Subsystem***: FRSky
-- [Mirko Denecke](https://github.com/mirkix):
-  - ***Board***: BBBmini, BeagleBone Blue, PocketPilot
-- [Paul Riseborough](https://github.com/priseborough):
-  - ***Subsystem***: AP_NavEKF2
-  - ***Subsystem***: AP_NavEKF3
-- [Víctor Mayoral Vilches](https://github.com/vmayoral):
-  - ***Board***: PXF, Erle-Brain 2, PXFmini
-- [Amilcar Lucas](https://github.com/amilcarlucas):
-  - ***Subsystem***: Marvelmind
-- [Samuel Tabor](https://github.com/samuelctabor):
-  - ***Subsystem***: Soaring/Gliding
-- [Henry Wurzburg](https://github.com/Hwurzburg):
-  - ***Subsystem***: OSD
-  - ***Site***: Wiki
-- [Peter Hall](https://github.com/IamPete1):
-  - ***Vehicle***: Tailsitters
-  - ***Vehicle***: Sailboat
-  - ***Subsystem***: Scripting
-- [Andy Piper](https://github.com/andyp1per):
-  - ***Subsystem***: Crossfire
-  - ***Subsystem***: ESC
-  - ***Subsystem***: OSD
-  - ***Subsystem***: SmartAudio
-- [Alessandro Apostoli](https://github.com/yaapu):
-  - ***Subsystem***: Telemetry
-  - ***Subsystem***: OSD
-- [Rishabh Singh](https://github.com/rishabsingh3003):
-  - ***Subsystem***: Avoidance/Proximity
-- [David Bussenschutt](https://github.com/davidbuzz):
-  - ***Subsystem***: ESP32,AP_HAL_ESP32
-- [Charles Villard](https://github.com/Silvanosky):
-  - ***Subsystem***: ESP32,AP_HAL_ESP32
+*基于 [ArduPilot](https://github.com/ArduPilot/ardupilot)（GPLv3 协议）的定制分支。*
