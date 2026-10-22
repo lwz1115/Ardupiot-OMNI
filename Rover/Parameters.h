@@ -367,6 +367,9 @@ public:
     // 全向机架自动模式下是否保持航向（0 = 无法偏航）
     AP_Int8 omni_yaw_hold;
 
+    // 全向自动模式下速度环加速度反馈修正增益（0 禁用，1 为全量）
+    AP_Float omni_vel_gain;
+
 #if HAL_SPRAYER_ENABLED
     // Sprayer
     AC_Sprayer sprayer;

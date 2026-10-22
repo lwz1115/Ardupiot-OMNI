@@ -455,7 +455,19 @@ void Mode::navigate_to_waypoint()
 
         // 世界系期望速度（含纠偏），按 pos_control 的速度上限映射成推力。
         const Vector2f vel_ne = g2.pos_control.get_vel_target();
-        const float speed_cmd = vel_ne.length();
+
+        // EKF 位置/速度不可用时的安全停车保护：
+        // AR_PosControl::update() 在位置/速度估计不可用（GPS 长时间丢失、
+        // EKF 发散等）时提前 return，_vel_target 不会被清零、保留最后值；
+        // 若直接拿去驱动，船会按旧速度继续盲冲。全向船没有转向自由度，
+        // 盲推比停车更危险，因此这里明确断开推力，等位置恢复再继续导航。
+        Vector3p _pos_m;
+        Vector3f _vel_ned;
+        if (!ahrs.get_relative_position_NED_origin(_pos_m) || !ahrs.get_velocity_NED(_vel_ned)) {
+            g2.motors.set_throttle(0);
+            g2.motors.set_lateral(0);
+            return;
+        }
 
         // 锁船头（若机架可偏航）或完全关闭转向（无偏航硬件）。
         if (g2.omni_yaw_hold > 0) {
@@ -479,17 +491,34 @@ void Mode::navigate_to_waypoint()
         const float surge_ms =  vel_ne.x * cosf(yaw_rad) + vel_ne.y * sinf(yaw_rad);
         const float sway_ms  = -vel_ne.x * sinf(yaw_rad) + vel_ne.y * cosf(yaw_rad);
 
-        // 速度→推力映射：用 pos_control 同一速度上限（与 vel_ne 同源，
-        // 保证 100% 推力 ≈ 期望速度上限）；方向由 surge/sway 归一化给出。
-        // 不在此处做任何"近零速度切断"，船跟随 SCurve 自然减速到航点。
+        // 混合全向驱动：SCurve/位置P生成速度目标，作为原有主指令；
+        // 速度环反馈只作为有界的附加修正。这里特意排除 _accel_desired，
+        // 因为它是 SCurve 的加速度前馈，若与速度前馈再次叠加会重复计入。
+        // OMNI_VEL_GAIN=0 可完全回退到原有速度映射；先用小增益观察，
+        // 不将导航 accel_max 当成电机动力学标定，也不让 PID 一步顶满输出。
+        // 到达仍由原生 reached_destination() 判定，不增加近零速度切断。
         const float speed_max = MAX(g2.pos_control.get_speed_max(), 0.1f);
-        const float ratio = constrain_float(speed_cmd / speed_max, -1.0f, 1.0f);
-        const float inv_speed = 1.0f / MAX(speed_cmd, 1e-3f);
+        const float accel_max = MAX(g2.pos_control.get_accel_max(), 0.1f);
 
-        // surge 直通油门；sway 经 OMNI_LAT_PCT 缩放、符号反转（正 lateral
-        // 驱动 X 型机架向左），使世界系合力指向目标。
-        g2.motors.set_throttle(ratio * surge_ms * inv_speed * 100.0f);
-        g2.motors.set_lateral(-g2.omni_lat_pct * ratio * sway_ms * inv_speed * 100.0f);
+        // SCurve 前馈速度项（保留原有行为）
+        const float ff_surge = surge_ms / speed_max * 100.0f;
+        const float ff_sway  = sway_ms  / speed_max * 100.0f;
+
+        // 速度控制器反馈（NE 加速度）旋转到船体系，并按 gain 缩放。
+        // 再限制反馈修正向量的总幅度，防止瞬态/参数误设直接顶满电机。
+        const Vector2f accel_feedback = g2.pos_control.get_accel_feedback();
+        const float gain = constrain_float(g2.omni_vel_gain, 0.0f, 1.0f);
+        Vector2f correction_body{
+            (accel_feedback.x * cosf(yaw_rad) + accel_feedback.y * sinf(yaw_rad)) / accel_max * 100.0f * gain,
+            (-accel_feedback.x * sinf(yaw_rad) + accel_feedback.y * cosf(yaw_rad)) / accel_max * 100.0f * gain
+        };
+        correction_body.limit_length(30.0f);
+
+        // 合并并限幅；lateral 符号保持现有 OmniX 混控约定。
+        const float throttle_cmd = constrain_float(ff_surge + correction_body.x, -100.0f, 100.0f);
+        const float lateral_cmd  = constrain_float(ff_sway  + correction_body.y, -100.0f, 100.0f);
+        g2.motors.set_throttle(throttle_cmd);
+        g2.motors.set_lateral(-g2.omni_lat_pct * lateral_cmd);
         return;
     }
 

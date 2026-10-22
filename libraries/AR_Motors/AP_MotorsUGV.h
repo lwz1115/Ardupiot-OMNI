@@ -184,6 +184,9 @@ private:
     // slew limit throttle for one iteration
     void slew_limit_throttle(float dt);
 
+    // slew limit lateral for one iteration (reuses MOT_SLEWRATE)
+    void slew_limit_lateral(float dt);
+
     // apply power limiting to throttle for one iteration
 #if AP_BATTERY_WATT_MAX_ENABLED
     void power_limit_throttle(float dt);
@@ -228,6 +231,7 @@ private:
     float   _throttle_limit = 1.0f;  // used for current limiting
     bool    _scale_steering = true; // true if we should scale steering by speed or angle
     float   _lateral;  // requested lateral input as a value from -100 to +100
+    float   _lateral_prev = 0.0f; // lateral input from previous iteration (for slew limit)
     float   _roll;      // requested roll as a value from -1 to +1
     float   _pitch;     // requested pitch as a value from -1 to +1
     float   _walking_height; // requested height as a value from -1 to +1   

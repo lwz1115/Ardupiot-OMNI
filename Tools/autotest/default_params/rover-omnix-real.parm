@@ -20,6 +20,7 @@ OMNI_LAT_PCT 100
 # translation then never commands steering; heading is only measured live and
 # the surge/sway split is recomputed every loop from the current GPS heading.
 OMNI_YAW_HOLD 0
+OMNI_VEL_GAIN 0.25
 
 # --- Heading source: UM982 dual-antenna RTK (no compass installed) ---
 # The EKF yaw must come from the GNSS moving-baseline heading, not a compass.
@@ -76,6 +77,36 @@ WP_SPEED 1.5
 # arrival and the shuttle arrival agree
 WP_RADIUS 1
 WP_PIVOT_RATE 60
+# MUST stay 0: omni frame has no usable pivot authority.  A non-zero value
+# makes AR_PivotTurn freeze the SCurve (AR_WPNav::update skips
+# advance_wp_target_along_track), so get_vel_target() returns 0 and the boat
+# produces no thrust at all in AUTO.
+WP_PIVOT_ANGLE 0
+
+# --- Motion smoothing ---
+# Limit how fast the thrusters may change output.  The stock firmware only
+# applied this to the throttle channel; the lateral (sideways) channel was
+# allowed to jump instantly, which made the boat bang the thrusters around
+# (stirring up the water) whenever the bow wandered under the current.
+# The firmware now applies the same limit to lateral, so this one parameter
+# smooths both channels.  100 = full range in 1s, 50 = full range in 2s.
+MOT_SLEWRATE 50
+# Limit acceleration/jerk so the speed ramps up smoothly instead of
+# slamming to full throttle (WP_ACCEL=0 falls back to 20 m/s² which is
+# far too aggressive for a boat).
+WP_ACCEL 0.8
+WP_JERK 1.0
+# Softer cross-track correction: the boat wanders a few metres off the
+# line in current, and an aggressive correction makes it hunt side to side.
+PSC_POS_P 0.1
+
+# --- Battery protection ---
+# 6S LiPo: 22.0V warn (3.67V/cell), 21.0V critical (3.5V/cell).
+# On critical voltage the boat goes to HOLD instead of draining the pack.
+BATT_LOW_VOLT 22.0
+BATT_CRT_VOLT 21.0
+BATT_FS_LOW_ACT 2     # 2 = HOLD
+BATT_FS_CRT_ACT 2     # 2 = HOLD
 
 # --- Two-point shuttle mode ---
 SHUTTLE_EN 1

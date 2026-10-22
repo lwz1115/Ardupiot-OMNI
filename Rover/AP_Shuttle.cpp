@@ -91,6 +91,7 @@ void AP_Shuttle::stop(StopReason reason)
         return;
     }
     (void)reason;
+    _task_type = TaskType::NONE;
     set_state(State::IDLE);
     rover.gcs().send_text(MAV_SEVERITY_INFO, "SHUTTLE_TASK_END");
 }
@@ -102,6 +103,7 @@ void AP_Shuttle::on_manual_override()
         return;
     }
     // 锁定：保持该状态直到 QGC 发送新的航程指令
+    _task_type = TaskType::NONE;
     set_state(State::MANUAL_MODE);
     rover.gcs().send_text(MAV_SEVERITY_WARNING, "MANUAL_MODE_OVERRIDE");
 }
@@ -109,11 +111,144 @@ void AP_Shuttle::on_manual_override()
 // 由主循环调用
 void AP_Shuttle::update()
 {
-    if (!enabled() || _state == State::IDLE || _state == State::MANUAL_MODE ||
-        _state == State::HOVER) {
+    if (!enabled()) {
         return;
     }
-    update_active_leg();
+
+    // 持续维护"当前所在点"（A/B）
+    update_current_wp();
+
+    switch (_state) {
+    case State::IDLE:
+    case State::MANUAL_MODE:
+    case State::HOVER:
+        return;
+    case State::TASKING:
+        update_task();
+        return;
+    case State::TASK:
+    case State::MOVING:
+        update_active_leg();
+        return;
+    }
+}
+
+// 判断当前所在点：与 A/B 的距离取近者
+void AP_Shuttle::update_current_wp()
+{
+    if (!_wp_a_valid || !_wp_b_valid) {
+        // 两点未全部定义，保持/清零
+        if (!_wp_a_valid && !_wp_b_valid) {
+            _current_wp = 0;
+        }
+        return;
+    }
+    const float d_a = rover.current_loc.get_distance(_wp_a);
+    const float d_b = rover.current_loc.get_distance(_wp_b);
+    _current_wp = (d_a < d_b) ? 1 : 2;
+}
+
+// 设 A 点：校验与 B 不重复（水平距离过近视为重复）
+bool AP_Shuttle::set_wp_a(const Location &loc)
+{
+    if (!loc.check_latlng()) {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_LOC");
+        return false;
+    }
+    if (_wp_b_valid && loc.get_distance(_wp_b) < 2.0f) {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_DUP_AB");
+        return false;
+    }
+    _wp_a = loc;
+    _wp_a_valid = true;
+    update_current_wp();
+    rover.gcs().send_text(MAV_SEVERITY_INFO, "SHUTTLE_WP_A_OK");
+    return true;
+}
+
+// 设 B 点：校验与 A 不重复
+bool AP_Shuttle::set_wp_b(const Location &loc)
+{
+    if (!loc.check_latlng()) {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_LOC");
+        return false;
+    }
+    if (_wp_a_valid && loc.get_distance(_wp_a) < 2.0f) {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_DUP_AB");
+        return false;
+    }
+    _wp_b = loc;
+    _wp_b_valid = true;
+    update_current_wp();
+    rover.gcs().send_text(MAV_SEVERITY_INFO, "SHUTTLE_WP_B_OK");
+    return true;
+}
+
+// 请求切到另一个点。返回目标点位置；两点未定义、当前位置未知、
+// 或正处于移动中（应等到达悬停后再切）时返回 false。
+bool AP_Shuttle::get_switch_target(Location &target) const
+{
+    if (!_wp_a_valid || !_wp_b_valid) {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_POINTS");
+        return false;
+    }
+    // 仅允许在悬停（已到点）或空闲时切换；移动/任务中切换会打乱航程
+    if (_state == State::MOVING || _state == State::TASK || _state == State::TASKING) {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_BUSY");
+        return false;
+    }
+    if (_current_wp == 1) {
+        target = _wp_b;
+    } else if (_current_wp == 2) {
+        target = _wp_a;
+    } else {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_NOWP");
+        return false;
+    }
+    return true;
+}
+
+// 启动模拟任务：仅 HOVER（已到达悬停）可启动；任务期间保持悬停并按本地计时
+bool AP_Shuttle::start_task(TaskType type)
+{
+    if (_state != State::HOVER) {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_NOT_HOVER");
+        return false;
+    }
+    switch (type) {
+    case TaskType::SAMPLE:
+        _task_duration_ms = 10000;   // 采样：模拟 10s
+        break;
+    case TaskType::MEASURE:
+        _task_duration_ms = 5000;    // 测量：模拟 5s
+        break;
+    default:
+        return false;
+    }
+    _task_type = type;
+    _task_start_ms = AP_HAL::millis();
+    set_state(State::TASKING);
+    rover.gcs().send_text(MAV_SEVERITY_INFO, "SHUTTLE_TASK_START %u", (unsigned)_task_duration_ms / 1000);
+    return true;
+}
+
+// 任务执行期间：保持悬停，本地计时到点后回到 HOVER
+void AP_Shuttle::update_task()
+{
+    // 任务应保持在悬停（loiter）状态执行；若期间被切走，视为任务中断。
+    // 此时船已在航点悬停，因此直接退回 HOVER 而不是清空为 IDLE，
+    // 避免丢掉当前航点上下文（current_wp / A、B 点仍保留）。
+    if (rover.control_mode != &rover.mode_loiter) {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_TASK_INTERRUPTED");
+        _task_type = TaskType::NONE;
+        set_state(State::HOVER);
+        return;
+    }
+    if (AP_HAL::millis() - _task_start_ms >= _task_duration_ms) {
+        _task_type = TaskType::NONE;
+        set_state(State::HOVER);
+        rover.gcs().send_text(MAV_SEVERITY_INFO, "SHUTTLE_TASK_DONE");
+    }
 }
 
 // 航程运行期间的到达检测与故障保护检查
@@ -144,13 +279,26 @@ void AP_Shuttle::update_active_leg()
         set_state((dist > radius) ? State::MOVING : State::TASK);
     }
 
-    // 到达需要同时满足距离与速度两个条件
-    if (dist <= radius && spd < arrive_speed_ms()) {
+    // 到达判定：优先采用 GUIDED 的 SCurve 原生判定（reached_destination）。
+    // GUIDED 到达后会切到 loiter 拉回/保持，船的本地 dist/spd 会在目标附近
+    // 反复振荡，永远凑不齐 "dist<=R && spd<V" 两个条件；而原生判定在
+    // SCurve 停稳时一次性置位，与本库的 HOVER 状态切换天然同步。
+    // 兜底条件保留（dist+spd 同时满足），用于无 SCurve 的路径。
+    if (rover.g2.wp_nav.reached_destination() ||
+        (dist <= radius && spd < arrive_speed_ms())) {
         rover.gcs().send_text(MAV_SEVERITY_INFO, "REACHED_WP");
         rover.gcs().send_mission_item_reached_message(0);
         // 切换到 loiter 以保持定点（mode_loiter 保持航向，并在无偏航
         // 机架上遵循 OMNI_YAW_HOLD）
         rover.set_mode(rover.mode_loiter, ModeReason::MISSION_END);
         set_state(State::HOVER);
+        // 到达后刷新"当前所在点"（用目标点位置直接判定，比距离近更准）
+        if (_wp_a_valid && _target.get_distance(_wp_a) < 1.0f) {
+            _current_wp = 1;
+        } else if (_wp_b_valid && _target.get_distance(_wp_b) < 1.0f) {
+            _current_wp = 2;
+        } else {
+            update_current_wp();
+        }
     }
 }

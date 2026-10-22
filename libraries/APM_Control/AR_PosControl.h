@@ -75,6 +75,14 @@ public:
     // directly in the world frame.
     Vector2f get_vel_target() const { return _vel_target; }
 
+    // Return the velocity-controller output in m/s/s in NE frame, excluding
+    // the separate SCurve acceleration feed-forward.  The result includes the
+    // velocity PID's P/I/D/FF terms and is suitable as a bounded feedback
+    // correction for omni drive mixing.
+    Vector2f get_accel_feedback() const {
+        return _accel_target - (_accel_desired_valid ? _accel_desired : Vector2f{});
+    }
+
     // return desired acceleration vector in m/s in NE frame
     Vector2f get_desired_accel() const;
 

@@ -686,6 +686,14 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("OMNI_YAW_HOLD", 50, ParametersG2, omni_yaw_hold, 1),
 
+    // @Param: OMNI_VEL_GAIN
+    // @DisplayName: Omni velocity feedback gain
+    // @Description: Scales the velocity-controller acceleration feedback added to the SCurve velocity feed-forward in omni autonomous navigation. Zero preserves the velocity-only output; increase gradually after testing.
+    // @Range: 0 1
+    // @Increment: 0.05
+    // @User: Advanced
+    AP_GROUPINFO("OMNI_VEL_GAIN", 17, ParametersG2, omni_vel_gain, 0.25f),
+
     // 两点穿梭模式参数（SHUTTLE_*）
     AP_SUBGROUPINFO(shuttle, "SHUTTLE_", 32, ParametersG2, AP_Shuttle),
 

@@ -349,6 +349,10 @@ void AP_MotorsUGV::output(bool armed, float ground_speed, float dt)
     // slew limit throttle
     slew_limit_throttle(dt);
 
+    // slew limit lateral (reuses MOT_SLEWRATE so omni boats do not
+    // bang the lateral channel around at high frequency)
+    slew_limit_lateral(dt);
+
     // apply power limiting to throttle
 #if AP_BATTERY_WATT_MAX_ENABLED
     power_limit_throttle(dt);
@@ -1146,6 +1150,28 @@ void AP_MotorsUGV::slew_limit_throttle(float dt)
         limit.throttle_lower = true;
     }
     _throttle_prev = _throttle;
+}
+
+// slew limit lateral for one iteration.  Reuses MOT_SLEWRATE so omni
+// boats get the same high-frequency command smoothing on the lateral
+// channel that throttle already has.  This stops the thrusters from
+// banging back and forth (and stirring up the water) when the boat's
+// heading wanders under current/flow while navigating.
+void AP_MotorsUGV::slew_limit_lateral(float dt)
+{
+    const float lateral_orig = _lateral;
+    if (_slew_rate > 0) {
+        const float lateral_change_max = static_cast<float>(_slew_rate) * dt;
+        _lateral = constrain_float(_lateral,
+                                   _lateral_prev - lateral_change_max,
+                                   _lateral_prev + lateral_change_max);
+    }
+    if (lateral_orig > _lateral) {
+        limit.throttle_upper = true;
+    } else if (lateral_orig < _lateral) {
+        limit.throttle_lower = true;
+    }
+    _lateral_prev = _lateral;
 }
 
 // apply power limiting to throttle for one iteration

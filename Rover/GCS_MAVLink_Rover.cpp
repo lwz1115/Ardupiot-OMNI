@@ -502,17 +502,107 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_packet(const mavlink_command_in
         return MAV_RESULT_FAILED;
 
     case MAV_CMD_USER_1:
-        // param1: 1 = 停止穿梭, 0 = 查询当前状态
+        // 两点穿梭子命令（param1）：
+        //   0 = 查询状态
+        //   1 = 停止穿梭
+        //   2 = 设 A 点（x/y 经纬度）
+        //   3 = 设 B 点（x/y 经纬度）
+        //   4 = 切换：当前在 A 则去 B，当前在 B 则去 A
+        //   5 = 开始采样任务（模拟 10s）
+        //   6 = 开始测量任务（模拟 5s）
         if (rover.g2.shuttle.enabled()) {
-            if (is_positive(packet.param1)) {
+            switch ((int8_t)packet.param1) {
+            case 0: {
+                // 状态查询：同时输出数字与关键字，QGC 端两种解析都能用。
+                // 数字对齐 QGC 映射：0=IDLE 1=HOVER 2=MOVING 3=TASKING 4=MANUAL_LOCK。
+                // 注意飞控内部枚举顺序为 IDLE/TASK/MOVING/HOVER/MANUAL_MODE/TASKING，
+                // 与对外映射不一致，因此在此处显式换算，不直接 cast 内部值。
+                static const char *const names[] = {"IDLE", "HOVER", "MOVING", "TASKING", "MANUAL_LOCK"};
+                const AP_Shuttle::State st = rover.g2.shuttle.get_state();
+                const uint8_t out_st =
+                    (st == AP_Shuttle::State::IDLE)        ? 0 :
+                    (st == AP_Shuttle::State::HOVER)       ? 1 :
+                    (st == AP_Shuttle::State::MOVING)      ? 2 :
+                    (st == AP_Shuttle::State::TASKING)     ? 3 :
+                    (st == AP_Shuttle::State::MANUAL_MODE) ? 4 : 2;
+                GCS_SEND_TEXT(MAV_SEVERITY_INFO, "SHUTTLE_STATE %u %s WP %u",
+                              (unsigned)out_st, names[out_st],
+                              (unsigned)rover.g2.shuttle.current_wp());
+                return MAV_RESULT_ACCEPTED;
+            }
+
+            case 1: {
                 rover.g2.shuttle.stop(AP_Shuttle::StopReason::GCS_REQUEST);
                 if (rover.set_mode(rover.mode_loiter, ModeReason::GCS_COMMAND)) {
                     return MAV_RESULT_ACCEPTED;
                 }
                 return MAV_RESULT_FAILED;
             }
-            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "SHUTTLE_STATE %u", (unsigned)rover.g2.shuttle.get_state());
-            return MAV_RESULT_ACCEPTED;
+
+            case 2:
+            case 3: {
+                // 设 A/B 点：MAV_CMD_USER_1 是自定义命令，不受
+                // command_long_stores_location 白名单限制。直接解析
+                // COMMAND_INT 的 x/y（经纬度 *1e7，int32）构造航点。
+                // 若 x/y 为 0，则退化为"当前位置"（QGC 把船开到目标点
+                // 后点击设置）。
+                Location loc {};
+                if (packet.x == 0 && packet.y == 0) {
+                    if (!rover.ekf_position_ok()) {
+                        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_NOPOS");
+                        return MAV_RESULT_DENIED;
+                    }
+                    loc = rover.current_loc;
+                } else {
+                    loc.lat = packet.x;
+                    loc.lng = packet.y;
+                    loc.alt = 0;
+                    if (!loc.check_latlng()) {
+                        GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_LOC");
+                        return MAV_RESULT_DENIED;
+                    }
+                }
+                const bool ok = (is_equal(packet.param1, 2.0f))
+                                    ? rover.g2.shuttle.set_wp_a(loc)
+                                    : rover.g2.shuttle.set_wp_b(loc);
+                return ok ? MAV_RESULT_ACCEPTED : MAV_RESULT_DENIED;
+            }
+
+            case 4: {
+                Location target {};
+                if (!rover.g2.shuttle.get_switch_target(target)) {
+                    return MAV_RESULT_DENIED;   // SHUTTLE_ERR_* 已上报
+                }
+                if (!rover.g2.shuttle.validate_leg(target)) {
+                    return MAV_RESULT_DENIED;
+                }
+                // 切到 GUIDED 并前往目标（与 DO_REPOSITION 流程一致）
+                if (!rover.control_mode->in_guided_mode()) {
+                    if (!rover.set_mode(Mode::Number::GUIDED, ModeReason::GCS_COMMAND)) {
+                        return MAV_RESULT_FAILED;
+                    }
+                }
+                if (!rover.mode_guided.set_desired_location(target)) {
+                    return MAV_RESULT_FAILED;
+                }
+                rover.g2.shuttle.begin_leg(target);
+                return MAV_RESULT_ACCEPTED;
+            }
+
+            case 5: {
+                const bool ok = rover.g2.shuttle.start_task(AP_Shuttle::TaskType::SAMPLE);
+                return ok ? MAV_RESULT_ACCEPTED : MAV_RESULT_DENIED;
+            }
+
+            case 6: {
+                const bool ok = rover.g2.shuttle.start_task(AP_Shuttle::TaskType::MEASURE);
+                return ok ? MAV_RESULT_ACCEPTED : MAV_RESULT_DENIED;
+            }
+
+            default:
+                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_CMD");
+                return MAV_RESULT_DENIED;
+            }
         }
         return MAV_RESULT_UNSUPPORTED;
 
