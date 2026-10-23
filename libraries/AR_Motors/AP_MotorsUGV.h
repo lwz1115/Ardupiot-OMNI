@@ -7,10 +7,10 @@
 
 class AP_MotorsUGV {
 public:
-    // Constructor
+    // 构造函数
     AP_MotorsUGV(AP_WheelRateControl& rate_controller);
 
-    // singleton support
+    // 单例支持
     static AP_MotorsUGV    *get_singleton(void) { return _singleton; }
 
     enum motor_test_order {
@@ -22,7 +22,7 @@ public:
         MOTOR_TEST_LAST
     };
 
-    // supported omni motor configurations
+    // 支持的全向电机配置
     enum frame_type {
         FRAME_TYPE_UNDEFINED = 0,
         FRAME_TYPE_OMNI3 = 1,
@@ -31,89 +31,89 @@ public:
         FRAME_TYPE_OMNI3MECANUM = 4,
     };
 
-    // initialise motors
+    // 初始化电机
     void init(uint8_t ftype);
 
-    // return true if motors are active
+    // 电机是否激活，返回 true
     bool active() const;
 
-    // setup output in case of main CPU failure
+    // 主 CPU 故障时设置安全输出
     void setup_safety_output();
 
-    // setup servo output ranges
+    // 设置舵机输出范围
     void setup_servo_output();
 
-    // get or set steering as a value from -4500 to +4500
-    //   apply_scaling should be set to false for manual modes where
-    //   no scaling by speed or angle should e performed
+    // 获取或设置转向值（范围 -4500 到 +4500）
+    //   手动模式下 apply_scaling 应设置为 false，
+    //   此时不进行速度或角度缩放
     float get_steering() const { return _steering; }
     void set_steering(float steering, bool apply_scaling = true);
 
-    // get or set throttle as a value from -100 to 100
+    // 获取或设置油门值（范围 -100 到 100）
     float get_throttle() const { return _throttle; }
     void set_throttle(float throttle);
 
-    // get or set roll as a value from -1 to 1
+    // 获取或设置滚转值（范围 -1 到 1）
     float get_roll() const { return _roll; }
     void set_roll(float roll);
 
-    // get or set pitch as a value from -1 to 1
+    // 获取或设置俯仰值（范围 -1 到 1）
     float get_pitch() const { return _pitch; }
     void set_pitch(float pitch);
 
-    // get or set walking_height as a value from -1 to 1
+    // 获取或设置行走高度值（范围 -1 到 1）
     float get_walking_height() const { return _walking_height; }
     void set_walking_height(float walking_height);
 
-    // get or set lateral input as a value from -100 to +100
+    // 获取或设置横向输入值（范围 -100 到 +100）
     float get_lateral() const { return _lateral; }
     void set_lateral(float lateral);
 
-    // set or get mainsail input as a value from 0 to 100
+    // 设置或获取主帆输入值（范围 0 到 100）
     void set_mainsail(float mainsail);
     float get_mainsail() const { return _mainsail; }
 
-    // set or get wingsail input as a value from -100 to 100
+    // 设置或获取翼帆输入值（范围 -100 到 100）
     void set_wingsail(float wingsail);
     float get_wingsail() const { return _wingsail; }
 
-    // set or get mast rotation input as a value from -100 to 100
+    // 设置或获取桅杆旋转输入值（范围 -100 到 100）
     void set_mast_rotation(float mast_rotation);
     float get_mast_rotation() const { return _mast_rotation; }
 
-    // get slew limited throttle
-    // used by manual mode to avoid bad steering behaviour during transitions from forward to reverse
-    // same as private slew_limit_throttle method (see below) but does not update throttle state
+    // 获取受转换速率限制的油门
+    // 手动模式使用，以避免从前进到倒车过渡期间转向性能不佳
+    // 与私有 slew_limit_throttle 方法相同（见下），但不更新油门状态
     float get_slew_limited_throttle(float throttle, float dt) const;
 
-    // true if vehicle is capable of skid steering
+    // 车辆是否具备滑移转向能力
     bool have_skid_steering() const;
 
-    // true if vehicle has vectored thrust (i.e. boat with motor on steering servo)
+    // 车辆是否具有矢量推力（即电机在转向舵机上的船）
     bool have_vectored_thrust() const { return is_positive(_vector_angle_max); }
 
-    // output to motors and steering servos
-    // ground_speed should be the vehicle's speed over the surface in m/s
-    // dt should be expected time between calls to this function
+    // 输出到电机和转向舵机
+    // ground_speed 应为车辆在地面上的速度（m/s）
+    // dt 应为两次调用此函数的预期间隔时间
     void output(bool armed, float ground_speed, float dt);
 
-    // test steering or throttle output as a percentage of the total (range -100 to +100)
-    // used in response to DO_MOTOR_TEST mavlink command
+    // 以总量的百分比（范围 -100 到 +100）测试转向或油门输出
+    // 用于响应 DO_MOTOR_TEST MAVLink 命令
     bool output_test_pct(motor_test_order motor_seq, float pct);
 
-    // test steering or throttle output using a pwm value
+    // 使用 PWM 值测试转向或油门输出
     bool output_test_pwm(motor_test_order motor_seq, float pwm);
 
-    //  returns true if checks pass, false if they fail.  display_failure argument should be true to send text messages to GCS
+    // 检查通过返回 true，失败返回 false。display_failure 参数为 true 时应向地面站发送文本消息
     bool pre_arm_check(bool report) const;
 
-    // return the motor mask
+    // 返回电机掩码
     uint32_t get_motor_mask() const { return _motor_mask; }
 
-    // returns true if the configured PWM type is digital and should have fixed endpoints
+    // 配置的 PWM 类型为数字且应有固定端点时返回 true
     bool is_digital_pwm_type() const;
 
-    // returns true if the vehicle is omni
+    // 车辆是否为全向时返回 true
     bool is_omni() const { return _frame_type != FRAME_TYPE_UNDEFINED && _motors_num > 0; }
 
     // 电机对：全向机架在差速模式下只激活部分电机（其余输出 TRIM 停转）
@@ -129,18 +129,18 @@ public:
     // 当前激活的电机对
     MotorPair get_motor_pair() const { return _motor_pair; }
 
-    // Return the relay index that would be used for param conversion to relay functions
+    // 返回用于参数转换到继电器功能的继电器索引
     bool get_legacy_relay_index(int8_t &index1, int8_t &index2, int8_t &index3, int8_t &index4) const;
 
-    // structure for holding motor limit flags
+    // 用于保存电机限制标志的结构
     struct AP_MotorsUGV_limit {
-        uint8_t steer_left      : 1; // we have reached the steering controller's left most limit
-        uint8_t steer_right     : 1; // we have reached the steering controller's right most limit
-        uint8_t throttle_lower  : 1; // we have reached throttle's lower limit
-        uint8_t throttle_upper  : 1; // we have reached throttle's upper limit
+        uint8_t steer_left      : 1; // 已到达转向控制器最左极限
+        uint8_t steer_right     : 1; // 已到达转向控制器最右极限
+        uint8_t throttle_lower  : 1; // 已到达油门下限
+        uint8_t throttle_upper  : 1; // 已到达油门上限
     } limit;
 
-    // var_info for holding Parameter information
+    // 用于保存参数信息的 var_info
     static const struct AP_Param::GroupInfo var_info[];
 
 private:
@@ -157,104 +157,104 @@ private:
         DSHOT1200 = 8
     };
 
-    // sanity check parameters
+    // 参数合理性检查
     void sanity_check_parameters();
 
-    // setup pwm output type
+    // 设置 PWM 输出类型
     void setup_pwm_type();
 
-    // setup for frames with omni motors
+    // 为带全向电机的机架进行设置
     void setup_omni();
 
-    // add omni motor using separate throttle, steering and lateral factors
+    // 使用独立的油门、转向和横向因子添加全向电机
     void add_omni_motor(int8_t motor_num, float throttle_factor, float steering_factor, float lateral_factor);
 
-    // add a motor and set up output function
+    // 添加电机并设置输出功能
     void add_omni_motor_num(int8_t motor_num);
 
-    // disable omni motor and remove all throttle, steering and lateral factor for this motor
+    // 禁用全向电机并移除该电机的所有油门、转向和横向因子
     void clear_omni_motors(int8_t motor_num);
 
-    // output to regular steering and throttle channels
+    // 输出到常规转向和油门通道
     void output_regular(bool armed, float ground_speed, float steering, float throttle);
 
-    // output to skid steering channels
+    // 输出到滑移转向通道
     void output_skid_steering(bool armed, float steering, float throttle, float dt);
 
-    // output for omni motors
+    // 全向电机输出
     void output_omni(bool armed, float steering, float throttle, float lateral);
 
-    // output throttle (-100 ~ +100) to a throttle channel.  Sets relays if required
-    // dt is the main loop time interval and is required when rate control is required
+    // 向油门通道输出油门（-100 ~ +100）。需要时设置继电器
+    // dt 为主循环时间间隔，需要速率控制时必须提供
     void output_throttle(SRV_Channel::Function function, float throttle, float dt = 0.0f);
 
-    // output for sailboat's mainsail in the range of 0 to 100 and wing sail in the range +- 100
+    // 输出帆船主帆（范围 0 到 100）和翼帆（范围 +-100）
     void output_sail();
 
-    // true if the vehicle has a mainsail or wing sail
+    // 车辆是否有主帆或翼帆
     bool has_sail() const;
 
-    // slew limit throttle for one iteration
+    // 对油门进行一次迭代的转换速率限制
     void slew_limit_throttle(float dt);
 
-    // slew limit lateral for one iteration (reuses MOT_SLEWRATE)
+    // 对横向进行一次迭代的转换速率限制（复用 MOT_SLEWRATE）
     void slew_limit_lateral(float dt);
 
-    // apply power limiting to throttle for one iteration
+    // 对油门进行一次迭代的功率限制
 #if AP_BATTERY_WATT_MAX_ENABLED
     void power_limit_throttle(float dt);
 #endif
 
-    // set limits based on steering and throttle input
+    // 基于转向和油门输入设置限制
     void set_limits_from_input(bool armed, float steering, float throttle);
 
-    // scale a throttle using the _thrust_curve_expo parameter.  throttle should be in the range -100 to +100
+    // 使用 _thrust_curve_expo 参数缩放油门。油门应在 -100 到 +100 范围内
     float get_scaled_throttle(float throttle) const;
 
-    // use rate controller to achieve desired throttle
+    // 使用速率控制器实现期望油门
     float get_rate_controlled_throttle(SRV_Channel::Function function, float throttle, float dt);
 
-    // return power_limit as a number from 0 ~ 1 in the range throttle_min to throttle_max
+    // 返回功率限制，范围为 throttle_min 到 throttle_max 之间的 0~1 数字
     float get_power_limit_max_throttle(float dt);
 
-    // external references
+    // 外部引用
     AP_WheelRateControl &_rate_controller;
 
     static const int8_t AP_MOTORS_NUM_MOTORS_MAX = 4;
 
-    // parameters
-    AP_Int8 _pwm_type;  // PWM output type
-    AP_UInt8 _pwm_freq;  // PWM output freq for brushed motors
-    AP_Int8 _disarm_disable_pwm;    // disable PWM output while disarmed
-    AP_Int16 _slew_rate; // slew rate expressed as a percentage / second
-    AP_Int8 _throttle_min; // throttle minimum percentage
-    AP_Int8 _throttle_max; // throttle maximum percentage
-    AP_Float _thrust_curve_expo; // thrust curve exponent from -1 to +1 with 0 being linear
-    AP_Float _thrust_asymmetry; // asymmetry factor, how much better your skid-steering motors are at going forward than backwards (forward/backward thrust ratio)
-    AP_Float _vector_angle_max;  // angle between steering's middle position and maximum position when using vectored thrust.  zero to disable vectored thrust
-    AP_Float _speed_scale_base;  // speed above which steering is scaled down when using regular steering/throttle vehicles.  zero to disable speed scaling
-    AP_Float _steering_throttle_mix; // Steering vs Throttle priorisation.  Higher numbers prioritise steering, lower numbers prioritise throttle.  Only valid for Skid Steering vehicles
-    AP_Float _reverse_delay; // delay in seconds when reversing motor
-    AP_Float _batt_power_time_constant;    // Time constant used to limit the battery power
+    // 参数
+    AP_Int8 _pwm_type;  // PWM 输出类型
+    AP_UInt8 _pwm_freq;  // 有刷电机的 PWM 输出频率
+    AP_Int8 _disarm_disable_pwm;    // 解锁状态下禁用 PWM 输出
+    AP_Int16 _slew_rate; // 转换速率，以百分比/秒表示
+    AP_Int8 _throttle_min; // 油门最小百分比
+    AP_Int8 _throttle_max; // 油门最大百分比
+    AP_Float _thrust_curve_expo; // 推力曲线指数，从 -1 到 +1，0 为线性
+    AP_Float _thrust_asymmetry; // 非对称因子，滑移转向电机前进比后退好多少（前进/后退推力比）
+    AP_Float _vector_angle_max;  // 使用矢量推力时，转向中间位置与最大位置之间的角度。零则禁用矢量推力
+    AP_Float _speed_scale_base;  // 常规转向/油门车辆中，超过此速度时转向会被缩放降低。零则禁用速度缩放
+    AP_Float _steering_throttle_mix; // 转向与油门优先级。数值越高越优先转向，越低越优先油门。仅对滑移转向车辆有效
+    AP_Float _reverse_delay; // 电机倒车时的延迟（秒）
+    AP_Float _batt_power_time_constant;    // 用于限制电池功率的时间常数
 
-    // internal variables
-    float   _steering;  // requested steering as a value from -4500 to +4500
-    float   _throttle;  // requested throttle as a value from -100 to 100
-    float   _throttle_prev; // throttle input from previous iteration
-    float   _throttle_limit = 1.0f;  // used for current limiting
-    bool    _scale_steering = true; // true if we should scale steering by speed or angle
-    float   _lateral;  // requested lateral input as a value from -100 to +100
-    float   _lateral_prev = 0.0f; // lateral input from previous iteration (for slew limit)
-    float   _roll;      // requested roll as a value from -1 to +1
-    float   _pitch;     // requested pitch as a value from -1 to +1
-    float   _walking_height; // requested height as a value from -1 to +1   
-    float   _mainsail;  // requested mainsail input as a value from 0 to 100
-    float   _wingsail;  // requested wing sail input as a value in the range +- 100
-    float   _mast_rotation;  // requested mast rotation input as a value in the range +- 100
-    uint32_t _motor_mask;   // mask of motors configured with pwm_type
-    frame_type _frame_type; // frame type requested at initialisation
+    // 内部变量
+    float   _steering;  // 请求的转向值（范围 -4500 到 +4500）
+    float   _throttle;  // 请求的油门值（范围 -100 到 100）
+    float   _throttle_prev; // 上一次迭代的油门输入
+    float   _throttle_limit = 1.0f;  // 用于限流
+    bool    _scale_steering = true; // 是否应按速度或角度缩放转向
+    float   _lateral;  // 请求的横向输入值（范围 -100 到 +100）
+    float   _lateral_prev = 0.0f; // 上一次迭代的横向输入（用于转换速率限制）
+    float   _roll;      // 请求的滚转值（范围 -1 到 +1）
+    float   _pitch;     // 请求的俯仰值（范围 -1 到 +1）
+    float   _walking_height; // 请求的高度值（范围 -1 到 +1）   
+    float   _mainsail;  // 请求的主帆输入值（范围 0 到 100）
+    float   _wingsail;  // 请求的翼帆输入值（范围 +- 100）
+    float   _mast_rotation;  // 请求的桅杆旋转输入值（范围 +- 100）
+    uint32_t _motor_mask;   // 配置了 pwm_type 的电机掩码
+    frame_type _frame_type; // 初始化时请求的机架类型
 
-    // omni variables
+    // 全向变量
     float   _throttle_factor[AP_MOTORS_NUM_MOTORS_MAX];
     float   _steering_factor[AP_MOTORS_NUM_MOTORS_MAX];
     float   _lateral_factor[AP_MOTORS_NUM_MOTORS_MAX];
@@ -264,13 +264,13 @@ private:
     MotorPair _motor_pair = MotorPair::ALL;
 
     /*
-      3 reversal handling structures, for k_throttle, k_throttleLeft and k_throttleRight
+      3 个倒转处理结构体，分别用于 k_throttle、k_throttleLeft 和 k_throttleRight
      */
     struct ReverseThrottle {
         float last_throttle;
         uint32_t last_output_ms;
 
-        // output with delay for reversal
+        // 带倒转延迟的输出
         void output(SRV_Channel::Function function, float throttle, float delay);
     } rev_delay_throttle, rev_delay_throttleLeft, rev_delay_throttleRight;
 

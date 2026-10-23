@@ -4,67 +4,67 @@
 #include <APM_Control/AR_AttitudeControl.h>
 
 /*
- * Pivot Turn controller for skid-steering rovers and boats
+ * 滑移转向地面车和船的原地转向（Pivot Turn）控制器
  *
- * How-to-Use:
- *    1. call "enable(true)" once for skid-steering vehicles to enable this controller
- *    2. before vehicle starts towards a waypoint call "check_activation" and provide the earth-frame heading to the waypoint
- *       this may change the controller's internal state to "active"
- *    3. on each main loop iteration call "active()" to see if this controller thinks it is controllering the vehicle
- *    4. call "get_turn_rate_rads()" to retrieve the desired turn rate towards the next waypoint
- *    5. pass above turn rate into the rate controller, set speed controller's speed to zero
- *    6. this controller's "active" state will change to false once it has completed the pivot turn
+ * 使用方法：
+ *    1. 对滑移转向车辆调用一次 "enable(true)" 以启用此控制器
+ *    2. 在车辆开始驶向航点前调用 "check_activation"，并提供到航点的大地坐标系航向
+ *       这可能会将控制器的内部状态改为 "active"（激活）
+ *    3. 在每个主循环迭代中调用 "active()" 以查看此控制器是否认为它在控制车辆
+ *    4. 调用 "get_turn_rate_rads()" 获取朝向下一个航点的期望转向率
+ *    5. 将上述转向率传入速率控制器，并将速度控制器的速度设为零
+ *    6. 此控制器的 "active" 状态将在完成原地转向后变为 false
  */
 
 class AR_PivotTurn {
 public:
 
-    // constructor
+    // 构造函数
     AR_PivotTurn(AR_AttitudeControl& atc);
 
-    // enable or disable pivot controller
+    // 启用或禁用原地转向控制器
     void enable(bool enable_pivot);
 
-    // true if this controller is controlling vehicle
+    // 此控制器是否正在控制车辆
     bool active() const;
 
-    // checks if pivot turns should be activated or deactivated
-    // force_active should be true if the caller wishes to trigger the start of a pivot turn regardless of the heading error
+    // 检查原地转向是否应被激活或停用
+    // 若调用者希望无论航向误差如何都触发原地转向开始，force_active 应为 true
     void check_activation(float desired_heading_deg, bool force_active = false);
 
-    // check if pivot turn would be activated given an expected change in yaw in degrees
-    // note this does not actually active the pivot turn.  To activate use the check_activation method
+    // 检查给定预期偏航变化（度）时原地转向是否会被激活
+    // 注意：此函数不会真正激活原地转向。要激活请使用 check_activation 方法
     bool would_activate(float yaw_change_deg) const WARN_IF_UNUSED;
 
-    // forcibly deactivate this controller
+    // 强制停用此控制器
     void deactivate() { _active = false; };
 
-    // get turn rate (in rad/sec)
-    // desired heading should be the heading towards the next waypoint in degrees
-    // dt should be the time since the last call in seconds
+    // 获取转向率（rad/s）
+    // desired heading 应为朝向下一个航点的航向（度）
+    // dt 应为距上次调用的时间（秒）
     float get_turn_rate_rads(float desired_heading_deg, float dt);
 
-    // accessors for parameter values
+    // 参数值访问器
     float get_rate_max() const { return _rate_max; }
 
-    // parameter var table
+    // 参数变量表
     static const struct AP_Param::GroupInfo var_info[];
 
 private:
 
-    // return post-turn delay duration in milliseconds
+    // 返回转向后延迟时长（毫秒）
     uint32_t get_delay_duration_ms() const;
 
-    // parameters
-    AP_Int16 _angle;                // minimum angle error (in degrees) that leads to pivot turn
-    AP_Int16 _rate_max;             // maximum turn rate (in degrees) during pivot turn
-    AP_Float _delay;                // waiting time (in seconds) after pivot turn completes
+    // 参数
+    AP_Int16 _angle;                // 触发原地转向的最小角度误差（度）
+    AP_Int16 _rate_max;             // 原地转向期间的最大转向率（度）
+    AP_Float _delay;                // 原地转向完成后的等待时间（秒）
 
-    // references
-    AR_AttitudeControl& _atc;       // rover attitude control library
+    // 引用
+    AR_AttitudeControl& _atc;       // 地面车姿态控制库
 
-    // local variables
-    bool _enabled;                  // true if vehicle can pivot
-    bool _active;                   // true if vehicle is currently pivoting
-    uint32_t _delay_start_ms;       // system time when post-turn delay started
+    // 局部变量
+    bool _enabled;                  // 车辆可以原地转向则为 true
+    bool _active;                   // 车辆当前正在原地转向则为 true
+    uint32_t _delay_start_ms;       // 转向后延迟开始的系统时间
 };

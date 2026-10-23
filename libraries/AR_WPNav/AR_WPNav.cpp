@@ -28,60 +28,60 @@ extern const AP_HAL::HAL& hal;
 
 #define AR_WPNAV_TIMEOUT_MS             100
 #define AR_WPNAV_SPEED_DEFAULT          2.0f
-#define AR_WPNAV_SPEED_MIN              0.05f   // minimum speed between waypoints in m/s
-#define AR_WPNAV_SPEED_UPDATE_MIN_MS    500     // max speed cannot be updated more than once in this many milliseconds
+#define AR_WPNAV_SPEED_MIN              0.05f   // 航点间最小速度（m/s）
+#define AR_WPNAV_SPEED_UPDATE_MIN_MS    500     // 最大速度在此毫秒数内不能更新超过一次
 #define AR_WPNAV_RADIUS_DEFAULT         2.0f
-#define AR_WPNAV_OVERSPEED_RATIO_MAX    5.0f    // if _overspeed_enabled the vehicle may travel as quickly as 5x WP_SPEED
-#define AR_WPNAV_SNAP_MAX               15.0f   // scurve snap (change in jerk) in m/s/s/s/s
-#define AR_WPNAV_ACCEL_MAX              20.0    // acceleration used when user has specified no acceleration limit
+#define AR_WPNAV_OVERSPEED_RATIO_MAX    5.0f    // 若 _overspeed_enabled，车辆最高可达到 WP_SPEED 的 5 倍速度
+#define AR_WPNAV_SNAP_MAX               15.0f   // S 曲线 snap（加加速度变化率）m/s/s/s/s
+#define AR_WPNAV_ACCEL_MAX              20.0    // 用户未指定加速度限制时使用的加速度
 
 const AP_Param::GroupInfo AR_WPNav::var_info[] = {
 
     // @Param: SPEED
-    // @DisplayName: Waypoint speed default
-    // @Description: Waypoint speed default
+    // @DisplayName: 航点默认速度
+    // @Description: 航点默认速度
     // @Units: m/s
     // @Range: 0 100
     // @Increment: 0.1
-    // @User: Standard
+    // @User: 标准
     AP_GROUPINFO("SPEED", 1, AR_WPNav, _speed_max, AR_WPNAV_SPEED_DEFAULT),
 
     // @Param: RADIUS
-    // @DisplayName: Waypoint radius
-    // @Description: The distance in meters from a waypoint when we consider the waypoint has been reached. This determines when the vehicle will turn toward the next waypoint.
+    // @DisplayName: 航点半径
+    // @Description: 判定到达航点的距离（米）。决定车辆何时转向下一航点。
     // @Units: m
     // @Range: 0 100
     // @Increment: 0.1
-    // @User: Standard
+    // @User: 标准
     AP_GROUPINFO("RADIUS", 2, AR_WPNav, _radius, AR_WPNAV_RADIUS_DEFAULT),
 
-    // 3 was OVERSHOOT
+    // 3 曾是 OVERSHOOT（越过航点）
 
-    // 4 was PIVOT_ANGLE
-    // 5 was PIVOT_RATE
-    // 6 was SPEED_MIN
-    // 7 was PIVOT_DELAY
+    // 4 曾是 PIVOT_ANGLE（原地转向角）
+    // 5 曾是 PIVOT_RATE（原地转向率）
+    // 6 曾是 SPEED_MIN（最小速度）
+    // 7 曾是 PIVOT_DELAY（原地转向延迟）
 
     // @Group: PIVOT_
     // @Path: AR_PivotTurn.cpp
     AP_SUBGROUPINFO(_pivot, "PIVOT_", 8, AR_WPNav, AR_PivotTurn),
 
     // @Param: ACCEL
-    // @DisplayName: Waypoint acceleration
-    // @Description: Waypoint acceleration.  If zero then ATC_ACCEL_MAX is used
+    // @DisplayName: 航点加速度
+    // @Description: 航点加速度。若为零则使用 ATC_ACCEL_MAX
     // @Units: m/s/s
     // @Range: 0 100
     // @Increment: 0.1
-    // @User: Standard
+    // @User: 标准
     AP_GROUPINFO("ACCEL", 9, AR_WPNav, _accel_max, 0),
 
     // @Param: JERK
-    // @DisplayName: Waypoint jerk
-    // @Description: Waypoint jerk (change in acceleration).  If zero then jerk is same as acceleration
+    // @DisplayName: 航点加加速度
+    // @Description: 航点加加速度（加速度变化率）。若为零则加加速度等于加速度
     // @Units: m/s/s/s
     // @Range: 0 100
     // @Increment: 0.1
-    // @User: Standard
+    // @User: 标准
     AP_GROUPINFO("JERK", 10, AR_WPNav, _jerk_max, 0),
 
     AP_GROUPEND
@@ -95,10 +95,10 @@ AR_WPNav::AR_WPNav(AR_AttitudeControl& atc, AR_PosControl &pos_control) :
     AP_Param::setup_object_defaults(this, var_info);
 }
 
-// initialise waypoint controller.  speed_max should be set to the maximum speed in m/s (or left at zero to use the default speed)
+// 初始化航点控制器。speed_max 应设置为最大速度（m/s）（留零则使用默认速度）
 void AR_WPNav::init(float speed_max)
 {
-    // determine max speed, acceleration and jerk
+    // 确定最大速度、加速度和加加速度
     _check_speed_param_change = !is_positive(speed_max);
     if (is_positive(speed_max)) {
         _base_speed_max = speed_max;
@@ -110,7 +110,7 @@ void AR_WPNav::init(float speed_max)
     const float jerk_max = get_jerk_max();
     _last_speed_param_ms = _speed_max;
 
-    // initialise position controller
+    // 初始化位置控制器
     _pos_control.set_limits(_base_speed_max, accel_max, _atc.get_turn_lat_accel_max(), jerk_max);
 
     _scurve_prev_leg.init();
@@ -118,26 +118,26 @@ void AR_WPNav::init(float speed_max)
     _scurve_next_leg.init();
     _track_scalar_dt = 1.0f;
 
-    // init some flags
+    // 初始化一些标志位
     _reached_destination = false;
     _fast_waypoint = false;
 
-    // ensure pivot turns are deactivated
+    // 确保原地转向被停用
     _pivot.deactivate();
     _pivot_at_next_wp = false;
 
-    // initialise origin and destination to stopping point
+    // 将起点和终点初始化为停车点
     _orig_and_dest_valid = false;
     set_origin_and_destination_to_stopping_point();
 
-    // initialise nudge speed to zero
+    // 将微调速度初始化为零
     set_nudge_speed_max(0);
 }
 
-// update navigation
+// 更新导航
 void AR_WPNav::update(float dt)
 {
-    // exit immediately if no current location, origin or destination
+    // 若无当前位置、起点或终点则立即退出
     Location current_loc;
     float speed;
     if (!hal.util->get_soft_armed() || !_orig_and_dest_valid || !AP::ahrs().get_location(current_loc) || !_atc.get_forward_speed(speed)) {
@@ -148,7 +148,7 @@ void AR_WPNav::update(float dt)
         return;
     }
 
-    // if no recent calls initialise desired_speed_limited to current speed
+    // 若近期无调用，将 desired_speed_limited 初始化为当前速度
     if (!is_active()) {
         _desired_speed_limited = speed;
     }
@@ -156,10 +156,10 @@ void AR_WPNav::update(float dt)
 
     update_distance_and_bearing_to_destination();
 
-    // handle change in params
+    // 处理参数变化
     update_limits();
 
-    // advance target along path unless vehicle is pivoting
+    // 除非车辆正在原地转向，否则沿路径推进目标
     if (!_pivot.active()) {
         switch (_nav_control_type) {
         case NavControllerType::NAV_SCURVE:
@@ -171,51 +171,51 @@ void AR_WPNav::update(float dt)
         }
     }
 
-    // update_steering_and_speed
+    // 更新转向和速度
     update_steering_and_speed(current_loc, dt);
 }
 
-// set maximum speed in m/s.  returns true on success
-// this should not be called at more than 3hz or else SCurve path planning may not advance properly
+// 设置最大速度（m/s）。成功返回 true
+// 调用频率不应超过 3Hz，否则 S 曲线路径规划可能无法正确推进
 bool AR_WPNav::set_speed_max(float speed_max)
 {
-    // range check target speed
+    // 对目标速度做范围检查
     if (speed_max < AR_WPNAV_SPEED_MIN) {
         return false;
     }
 
     _base_speed_max = speed_max;
-    // explicit override takes precedence; disable WP_SPEED param-refresh so it cannot overwrite the override
+    // 显式覆盖优先；禁用 WP_SPEED 参数刷新，使其无法覆盖此覆盖值
     _check_speed_param_change = false;
     return true;
 }
 
-// set speed nudge in m/s.  this will have no effect unless nudge_speed_max > speed_max
-// nudge_speed_max should always be positive regardless of whether the vehicle is travelling forward or reversing
+// 设置速度微调量（m/s）。除非 nudge_speed_max > speed_max，否则不生效
+// nudge_speed_max 应始终为正，无论车辆前进还是倒车
 void AR_WPNav::set_nudge_speed_max(float nudge_speed_max)
 {
     _nudge_speed_max = nudge_speed_max;
 }
 
-// set desired location and (optionally) next_destination
-// next_destination should be provided if known to allow smooth cornering
+// 设置目标位置，以及（可选的）下一目标点
+// 若已知下一目标点应提供，以实现平滑转弯
 bool AR_WPNav::set_desired_location(const Location& destination, Location next_destination)
 {
-    // re-initialise if inactive, previous destination has been interrupted or different controller was used
+    // 若未激活、之前的终点被打断或使用了不同的控制器，则重新初始化
     if (!is_active() || !_reached_destination || (_nav_control_type != NavControllerType::NAV_SCURVE)) {
         if (!set_origin_and_destination_to_stopping_point()) {
             return false;
         }
-        // clear scurves
+        // 清空 S 曲线
         _scurve_prev_leg.init();
         _scurve_this_leg.init();
         _scurve_next_leg.init();
     }
 
-    // shift this leg to previous leg
+    // 将本航段前移为上一航段
     _scurve_prev_leg = _scurve_this_leg;
 
-    // initialise some variables
+    // 初始化一些变量
     _origin = _destination;
     _destination = destination;
     _orig_and_dest_valid = true;
@@ -223,14 +223,14 @@ bool AR_WPNav::set_desired_location(const Location& destination, Location next_d
 
     update_distance_and_bearing_to_destination();
 
-    // check if vehicle should pivot if vehicle stopped at previous waypoint
-    // or journey to previous waypoint was interrupted or navigation has just started
+    // 若车辆在上一航点停下、或到上一航点的行程被打断、或导航刚开始，
+    // 则检查车辆是否应原地转向
     if (!_fast_waypoint) {
         _pivot.deactivate();
         _pivot.check_activation((_reversed ? wrap_360_cd(oa_wp_bearing_cd() + 18000) : oa_wp_bearing_cd()) * 0.01, _pivot_at_next_wp);
     }
 
-    // convert origin and destination to offset from EKF origin
+    // 将起点和终点转换为相对 EKF 原点的偏移
     Vector2f origin_NE;
     Vector2f destination_NE;
     if (!_origin.get_vector_xy_from_origin_NE_cm(origin_NE) ||
@@ -241,34 +241,34 @@ bool AR_WPNav::set_desired_location(const Location& destination, Location next_d
     origin_NE *= 0.01f;
     destination_NE *= 0.01f;
 
-    // calculate track to destination
+    // 计算到终点的航迹
     if (_fast_waypoint && !_scurve_next_leg.finished()) {
-        // skip recalculating this leg by simply shifting next leg
+        // 直接前移下一航段，跳过重新计算本航段
         _scurve_this_leg = _scurve_next_leg;
     } else {
-        _scurve_this_leg.calculate_track(Vector3p{origin_NE.x, origin_NE.y, 0.0f},              // origin
-                                         Vector3p{destination_NE.x, destination_NE.y, 0.0f},    // destination
-                                         0.0, // arc length is zero for straight track
+        _scurve_this_leg.calculate_track(Vector3p{origin_NE.x, origin_NE.y, 0.0f},              // 起点
+                                         Vector3p{destination_NE.x, destination_NE.y, 0.0f},    // 终点
+                                         0.0, // 直线航段弧长为零
                                          _pos_control.get_speed_max(),
-                                         _pos_control.get_speed_max(),  // speed up (not used)
-                                         _pos_control.get_speed_max(),  // speed down (not used)
-                                         _pos_control.get_accel_max(),  // forward back acceleration
-                                         _pos_control.get_accel_max(),  // vertical accel (not used)
-                                         _pos_control.get_accel_max(),  // corner acceleration
-                                         AR_WPNAV_SNAP_MAX,             // snap
+                                         _pos_control.get_speed_max(),  // 上升速度（未使用）
+                                         _pos_control.get_speed_max(),  // 下降速度（未使用）
+                                         _pos_control.get_accel_max(),  // 前后向加速度
+                                         _pos_control.get_accel_max(),  // 垂直加速度（未使用）
+                                         _pos_control.get_accel_max(),  // 转弯加速度
+                                         AR_WPNAV_SNAP_MAX,             // snap（加加速度变化率）
                                          _pos_control.get_jerk_max());
     }
 
-    // handle next destination
+    // 处理下一终点
     _scurve_next_leg.init();
     _fast_waypoint = false;
     _pivot_at_next_wp = false;
     if (next_destination.initialised()) {
-        // check if vehicle should pivot at next waypoint
+        // 检查车辆是否应在下一航点原地转向
         const float next_wp_yaw_change = get_corner_angle(_origin, destination, next_destination);
         _pivot_at_next_wp = _pivot.would_activate(next_wp_yaw_change);
         if (!_pivot_at_next_wp) {
-            // convert next_destination to offset from EKF origin
+            // 将 next_destination 转换为相对 EKF 原点的偏移
             Vector2f next_destination_NE;
             if (!next_destination.get_vector_xy_from_origin_NE_cm(next_destination_NE)) {
                 INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
@@ -277,22 +277,22 @@ bool AR_WPNav::set_desired_location(const Location& destination, Location next_d
             next_destination_NE *= 0.01f;
             _scurve_next_leg.calculate_track(Vector3p{destination_NE.x, destination_NE.y, 0.0f},
                                              Vector3p{next_destination_NE.x, next_destination_NE.y, 0.0f},
-                                             0.0, // arc length is zero for straight track
+                                             0.0, // 直线航段弧长为零
                                              _pos_control.get_speed_max(),
-                                             _pos_control.get_speed_max(),  // speed up (not used)
-                                             _pos_control.get_speed_max(),  // speed down (not used)
-                                             _pos_control.get_accel_max(),  // forward back acceleration
-                                             _pos_control.get_accel_max(),  // vertical accel (not used)
-                                             _pos_control.get_accel_max(),  // corner accel
-                                             AR_WPNAV_SNAP_MAX,             // snap
+                                             _pos_control.get_speed_max(),  // 上升速度（未使用）
+                                             _pos_control.get_speed_max(),  // 下降速度（未使用）
+                                             _pos_control.get_accel_max(),  // 前后向加速度
+                                             _pos_control.get_accel_max(),  // 垂直加速度（未使用）
+                                             _pos_control.get_accel_max(),  // 转弯加速度
+                                             AR_WPNAV_SNAP_MAX,             // snap（加加速度变化率）
                                              _pos_control.get_jerk_max());
 
-            // next destination provided so fast waypoint
+            // 提供了下一终点，因此为快航点
             _fast_waypoint = true;
         }
     }
 
-    // scurves used for navigation to destination
+    // 导航到终点使用 S 曲线
     _nav_control_type = NavControllerType::NAV_SCURVE;
 
     update_distance_and_bearing_to_destination();
@@ -300,7 +300,7 @@ bool AR_WPNav::set_desired_location(const Location& destination, Location next_d
     return true;
 }
 
-// set desired location to a reasonable stopping point, return true on success
+// 将目标位置设置为合理的停车点，成功返回 true
 bool AR_WPNav::set_desired_location_to_stopping_location()
 {
     Location stopping_loc;
@@ -310,48 +310,48 @@ bool AR_WPNav::set_desired_location_to_stopping_location()
     return set_desired_location(stopping_loc);
 }
 
-// set desired location as offset from the EKF origin, return true on success
+// 以相对 EKF 原点的偏移设置目标位置，成功返回 true
 bool AR_WPNav::set_desired_location_NED(const Vector3f& destination)
 {
-    // initialise destination to ekf origin
+    // 将终点初始化为 EKF 原点
     Location destination_ned;
     if (!AP::ahrs().get_origin(destination_ned)) {
         return false;
     }
 
-    // apply offset
+    // 应用偏移
     destination_ned.offset(destination.x, destination.y);
     return set_desired_location(destination_ned);
 }
 
 bool AR_WPNav::set_desired_location_NED(const Vector3f &destination, const Vector3f &next_destination)
 {
-    // initialise destination to ekf origin
+    // 将终点初始化为 EKF 原点
     Location dest_loc, next_dest_loc;
     if (!AP::ahrs().get_origin(dest_loc)) {
         return false;
     }
     next_dest_loc = dest_loc;
 
-    // apply offsets
+    // 应用偏移
     dest_loc.offset(destination.x, destination.y);
     next_dest_loc.offset(next_destination.x, next_destination.y);
     return set_desired_location(dest_loc, next_dest_loc);
 }
 
-// set desired location but expect the destination to be updated again in the near future
-// position controller input shaping will be used for navigation instead of scurves
-// Note: object avoidance is not supported if this method is used
+// 设置目标位置，但预期目标在不久的将来会被再次更新
+// 导航将使用位置控制器输入整形，而非 S 曲线
+// 注意：使用此方法时不支持避障
 bool AR_WPNav::set_desired_location_expect_fast_update(const Location &destination)
 {
-    // initialise if not active
+    // 若未激活则初始化
     if (!is_active() || (_nav_control_type != NavControllerType::NAV_PSC_INPUT_SHAPING)) {
         if (!set_origin_and_destination_to_stopping_point()) {
             return false;
         }
     }
 
-    // initialise some variables
+    // 初始化一些变量
     _origin = _destination;
     _destination = destination;
     _orig_and_dest_valid = true;
@@ -359,15 +359,15 @@ bool AR_WPNav::set_desired_location_expect_fast_update(const Location &destinati
 
     update_distance_and_bearing_to_destination();
 
-    // check if vehicle should pivot
+    // 检查车辆是否应原地转向
     _pivot.check_activation((_reversed ? wrap_360_cd(oa_wp_bearing_cd() + 18000) : oa_wp_bearing_cd()) * 0.01);
 
-    // position controller input shaping used for navigation to destination
+    // 导航到终点使用位置控制器输入整形
     _nav_control_type = NavControllerType::NAV_PSC_INPUT_SHAPING;
     return true;
 }
 
-// calculate vehicle stopping point using current location, velocity and maximum acceleration
+// 使用当前位置、速度和最大加速度计算车辆停车点
 bool AR_WPNav::get_stopping_location(Location& stopping_loc)
 {
     Location current_loc;
@@ -375,20 +375,20 @@ bool AR_WPNav::get_stopping_location(Location& stopping_loc)
         return false;
     }
 
-    // get current velocity vector and speed
+    // 获取当前速度向量和速度
     const Vector2f velocity = AP::ahrs().groundspeed_vector();
     const float speed = velocity.length();
 
-    // avoid divide by zero
+    // 避免除以零
     if (!is_positive(speed)) {
         stopping_loc = current_loc;
         return true;
     }
 
-    // get stopping distance in meters
+    // 获取停车距离（米）
     const float stopping_dist = _atc.get_stopping_distance(speed);
 
-    // calculate stopping position from current location in meters
+    // 以米为单位计算距当前位置的停车位置
     const Vector2f stopping_offset = velocity.normalized() * stopping_dist;
     stopping_loc = current_loc;
     stopping_loc.offset(stopping_offset.x, stopping_offset.y);
@@ -396,68 +396,68 @@ bool AR_WPNav::get_stopping_location(Location& stopping_loc)
     return true;
 }
 
-// true if update has been called recently
+// 最近是否调用过 update
 bool AR_WPNav::is_active() const
 {
     return ((AP_HAL::millis() - _last_update_ms) < AR_WPNAV_TIMEOUT_MS);
 }
 
-// move target location along track from origin to destination using SCurves navigation
+// 使用 S 曲线导航沿航迹从起点向终点推进目标位置
 void AR_WPNav::advance_wp_target_along_track(const Location &current_loc, float dt)
 {
-    // exit immediately if no current location, destination or disarmed
+    // 若无当前位置、终点或未解锁则立即退出
     Vector2f curr_pos_NE;
     Vector3f curr_vel_NED;
     if (!AP::ahrs().get_relative_position_NE_origin_float(curr_pos_NE) || !AP::ahrs().get_velocity_NED(curr_vel_NED)) {
         return;
     }
 
-    // exit immediately if we can't convert waypoint origin to offset from ekf origin
+    // 若无法将航点起点转换为相对 EKF 原点的偏移则立即退出
     Vector2f origin_NE;
     if (!_origin.get_vector_xy_from_origin_NE_cm(origin_NE)) {
         return;
     }
-    // convert from cm to meters
+    // 从厘米转换为米
     origin_NE *= 0.01f;
 
-    // use _track_scalar_dt to slow down S-Curve time to prevent target moving too far in front of vehicle
+    // 使用 _track_scalar_dt 减慢 S 曲线时间，防止目标移动到车辆前方太远
     Vector2f curr_target_vel = _pos_control.get_desired_velocity();
     float track_scaler_dt = 1.0f;
     if (is_positive(curr_target_vel.length())) {
         Vector2f track_direction = curr_target_vel.normalized();
         const float track_error = _pos_control.get_pos_error().tofloat().dot(track_direction);
         float track_velocity = curr_vel_NED.xy().dot(track_direction);
-        // set time scaler to be consistent with the achievable vehicle speed with a 5% buffer for short term variation.
+        // 设置时间缩放系数以匹配车辆可达到的速度，并留 5% 缓冲应对短期变化
         const float time_scaler_dt_max = _overspeed_enabled ? AR_WPNAV_OVERSPEED_RATIO_MAX : 1.0f;
         track_scaler_dt = constrain_float(0.05f + (track_velocity - _pos_control.get_pos_p().kP() * track_error) / curr_target_vel.length(), 0.0f, time_scaler_dt_max);
     }
-    // change s-curve time speed with a time constant of maximum acceleration / maximum jerk
+    // 以最大加速度/最大加加速度为时间常数改变 S 曲线时间速度
     float track_scaler_tc = 1.0f;
     if (is_positive(_pos_control.get_jerk_max())) {
         track_scaler_tc = _pos_control.get_accel_max() / _pos_control.get_jerk_max();
     }
     _track_scalar_dt += (track_scaler_dt - _track_scalar_dt) * (dt / track_scaler_tc);
 
-    // target position, velocity and acceleration from straight line or spline calculators
+    // 从直线或样条计算器获取目标位置、速度和加速度
     Vector3p target_pos_3d{origin_NE.x, origin_NE.y, 0.0f};
     Vector3f target_vel, target_accel;
 
-    // update target position, velocity and acceleration
+    // 更新目标位置、速度和加速度
     const float wp_radius = MAX(_radius, _turn_radius);
     bool s_finished = _scurve_this_leg.advance_target_along_track(_scurve_prev_leg, _scurve_next_leg, wp_radius, _pos_control.get_lat_accel_max(), _fast_waypoint, _track_scalar_dt * dt, target_pos_3d, target_vel, target_accel);
 
-    // pass new target to the position controller
+    // 将新目标传递给位置控制器
     init_pos_control_if_necessary();
     Vector2p target_pos_ptype{target_pos_3d.x, target_pos_3d.y};
     _pos_control.set_pos_vel_accel_target(target_pos_ptype, target_vel.xy(), target_accel.xy());
 
-    // check if we've reached the waypoint
+    // 检查是否已到达航点
     if (!_reached_destination && s_finished) {
-        // "fast" waypoints are complete once the intermediate point reaches the destination
+        // "快"航点在中间点到达终点时即完成
         if (_fast_waypoint) {
             _reached_destination = true;
         } else {
-            // regular waypoints also require the vehicle to be within the waypoint radius or past the "finish line"
+            // 普通航点还要求车辆位于航点半径内或越过"终点线"
             const bool near_wp = current_loc.get_distance(_destination) <= _radius;
             const bool past_wp = current_loc.past_interval_finish_line(_origin, _destination);
             _reached_destination = near_wp || past_wp;
@@ -468,32 +468,32 @@ void AR_WPNav::advance_wp_target_along_track(const Location &current_loc, float 
 // update psc input shaping navigation controller
 void AR_WPNav::update_psc_input_shaping(float dt)
 {
-    // convert destination location to offset from EKF origin (in meters)
+    // 将终点位置转换为相对 EKF 原点的偏移（米）
     Vector2f pos_target_cm;
     if (!_destination.get_vector_xy_from_origin_NE_cm(pos_target_cm)) {
         return;
     }
 
-    // initialise position controller if not called recently
+    // 若位置控制器近期未被调用则初始化它
     init_pos_control_if_necessary();
 
-    // convert to meters and update target
+    // 转换为米并更新目标
     const Vector2p pos_target = pos_target_cm.topostype() * 0.01;
     _pos_control.input_pos_target(pos_target, dt);
 
-    // update reached_destination
+    // 更新 reached_destination
     if (!_reached_destination) {
-        // calculate position difference between destination and position controller input shaped target
+        // 计算终点与位置控制器整形目标之间的位置差
         Vector2p pos_target_diff = pos_target - _pos_control.get_pos_target();
-        // vehicle has reached destination when the target is within 1cm of the destination and vehicle is within waypoint radius
+        // 当目标距离终点小于 1cm 且车辆位于航点半径内时，视为已到达终点
         _reached_destination = (pos_target_diff.length_squared() < sq(0.01)) && (_pos_control.get_pos_error().length_squared() < sq(_radius));
     }
 }
 
-// update straight-line distance and bearing from vehicle's current position to destination
+// 更新从车辆当前位置到终点的直线距离和方位
 void AR_WPNav::update_distance_and_bearing_to_destination()
 {
-    // if no current location leave distance unchanged
+    // 若无当前位置则保持距离不变
     Location current_loc;
     if (!_orig_and_dest_valid || !AP::ahrs().get_location(current_loc)) {
         _distance_to_destination = 0.0f;
@@ -504,18 +504,18 @@ void AR_WPNav::update_distance_and_bearing_to_destination()
     _wp_bearing_cd = current_loc.get_bearing_to(_destination);
 }
 
-// calculate steering and speed to drive along line from origin to destination waypoint
+// 计算沿起点到终点航点连线行驶所需的转向和速度
 void AR_WPNav::update_steering_and_speed(const Location &current_loc, float dt)
 {
     _cross_track_error = calc_crosstrack_error(current_loc);
 
-    // update position controller
+    // 更新位置控制器
     _pos_control.set_reversed(_reversed);
     _pos_control.update(dt);
 
-    // handle pivot turns
+    // 处理原地转向
     if (_pivot.active()) {
-        // decelerate to zero
+        // 减速到零
         _desired_speed_limited = _atc.get_desired_speed_accel_limited(0.0f, dt);
         _desired_heading_cd = _reversed ? wrap_360_cd(oa_wp_bearing_cd() + 18000) : oa_wp_bearing_cd();
         _desired_turn_rate_rads = is_zero(_desired_speed_limited) ? _pivot.get_turn_rate_rads(_desired_heading_cd * 0.01, dt) : 0;
@@ -527,48 +527,48 @@ void AR_WPNav::update_steering_and_speed(const Location &current_loc, float dt)
     }
 }
 
-// settor to allow vehicle code to provide turn related param values to this library (should be updated regularly)
+// 设置器：允许载具代码向本库提供转向相关参数值（应定期更新）
 void AR_WPNav::set_turn_params(float turn_radius, bool pivot_possible)
 {
     _turn_radius = pivot_possible ? 0.0 : turn_radius;
     _pivot.enable(pivot_possible);
 }
 
-// calculate the crosstrack error
-// value is negative when the vehicle is on the path's left side
+// 计算侧向偏航误差（横迹误差）
+// 车辆位于航迹左侧时该值为负
 float AR_WPNav::calc_crosstrack_error(const Location& current_loc) const
 {
     if (!_orig_and_dest_valid) {
         return 0.0f;
     }
 
-    // get object avoidance adjusted origin and destination
+    // 获取经避障调整后的起点和终点
     const Location &orig = get_oa_origin();
     const Location &dest = get_oa_destination();
 
-    // calculate the NE position of destination relative to origin
+    // 计算终点相对起点的东北坐标位置
     Vector2f dest_from_origin = orig.get_distance_NE(dest);
 
-    // return distance to destination if length of track is very small
+    // 若航迹长度非常小，则返回到终点的距离
     if (dest_from_origin.length() < 1.0e-6f) {
         return current_loc.get_distance_NE(dest).length();
     }
 
-    // convert to a vector indicating direction only
+    // 转换为仅表示方向的向量
     dest_from_origin.normalize();
 
-    // calculate the NE position of the vehicle relative to origin
+    // 计算车辆相对起点的东北坐标位置
     const Vector2f veh_from_origin = orig.get_distance_NE(current_loc);
 
-    // calculate distance to target track, for reporting
+    // 计算到目标航迹的距离，用于上报
     return veh_from_origin % dest_from_origin;
 }
 
-// calculate yaw change at next waypoint in degrees
-// returns zero if the angle cannot be calculated because some points are on top of others
+// 计算下一航点处的偏航角变化（度）
+// 若部分点重合而无法计算角度，返回零
 float AR_WPNav::get_corner_angle(const Location& loc1, const Location& loc2, const Location& loc3) const
 {
-    // sanity check
+    // 合理性检查
     if (!loc1.initialised() || !loc2.initialised() || !loc3.initialised()) {
         return 0;
     }
@@ -578,24 +578,24 @@ float AR_WPNav::get_corner_angle(const Location& loc1, const Location& loc2, con
     return diff_yaw_deg;
 }
 
-// helper function to initialise position controller if it hasn't been called recently
-// this should be called before updating the position controller with new targets but after the EKF has a good position estimate
+// 辅助函数：若位置控制器近期未被调用则初始化它
+// 应在更新位置控制器新目标之前、且 EKF 已有良好位置估计之后调用
 void AR_WPNav::init_pos_control_if_necessary()
 {
-    // initialise position controller if not called recently
+    // 若位置控制器近期未被调用则初始化它
     if (!_pos_control.is_active()) {
         if (!_pos_control.init()) {
-            // this should never fail because we should always have a valid position estimate at this point
+            // 此时应始终有有效的位置估计，因此此调用不应失败
             INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
             return;
         }
     }
 }
 
-// set origin and destination to stopping point
+// 将起点和终点设置为停车点
 bool AR_WPNav::set_origin_and_destination_to_stopping_point()
 {
-    // initialise origin and destination to stopping point
+    // 将起点和终点初始化为停车点
     Location stopping_loc;
     if (!get_stopping_location(stopping_loc)) {
         return false;
@@ -605,42 +605,42 @@ bool AR_WPNav::set_origin_and_destination_to_stopping_point()
     return true;
 }
 
-// check for changes in _nudge_speed_max, _base_speed_max, _accel_max, _jerk_max or
-// _atc.get_turn_lat_accel_max() and update position controller limits if required
+// 检查 _nudge_speed_max、_base_speed_max、_accel_max、_jerk_max 或
+// _atc.get_turn_lat_accel_max() 是否变化，必要时更新位置控制器限制
 void AR_WPNav::update_limits()
 {
-    // refresh _base_speed_max if WP_SPEED param changed since init
+    // 若自初始化以来 WP_SPEED 参数发生变化，则刷新 _base_speed_max
     if (_check_speed_param_change && !is_equal(_speed_max.get(), _last_speed_param_ms)) {
         _base_speed_max = MAX(AR_WPNAV_SPEED_MIN, _speed_max.get());
         _last_speed_param_ms = _speed_max;
     }
 
-    // update limits
-    // Note this won't be applied to s-curve legs until the next waypoint, or (in 
-    // the case of fast waypoints, the waypoint-after-next)
+    // 更新限制
+    // 注意：这些限制要到下一个航点（或在快航点情况下
+    // 再到下一个航点）才会应用到 S 曲线航段
     const float accel_max = get_accel_max();
     const float jerk_max = get_jerk_max();
     const float speed_max = MAX(_base_speed_max, _nudge_speed_max);
     const float lat_accel_max = _atc.get_turn_lat_accel_max();
 
-    // ignore calls that do not change the speed, accel, jerk or lateral acceleration limits
+    // 忽略不改变速度、加速度、加加速度或横向加速度限制的调用
     if (is_equal(speed_max, _pos_control.get_speed_max()) && is_equal(accel_max, _pos_control.get_accel_max()) &&
         is_equal(jerk_max, _pos_control.get_jerk_max()) &&
         is_equal(lat_accel_max, _pos_control.get_lat_accel_max())) {
         return;
     }
 
-    // protect against rapid updates
+    // 防止过快更新
     const uint32_t now_ms = AP_HAL::millis();
     if (now_ms - _last_speed_update_ms < AR_WPNAV_SPEED_UPDATE_MIN_MS) {
         return;
     }
     _last_speed_update_ms = now_ms;
 
-    // update position controller.
+    // 更新位置控制器
     _pos_control.set_limits(speed_max, accel_max, lat_accel_max, jerk_max);
 
-    // change track speed
+    // 改变航迹速度
     _scurve_this_leg.set_speed_max(_pos_control.get_speed_max(), _pos_control.get_speed_max(), _pos_control.get_speed_max());
     _scurve_next_leg.set_speed_max(_pos_control.get_speed_max(), _pos_control.get_speed_max(), _pos_control.get_speed_max());
 }
@@ -649,7 +649,7 @@ float AR_WPNav::get_accel_max() const
 {
     float atc_accel_max = MIN(_atc.get_accel_max(), _atc.get_decel_max());
     if (!is_positive(atc_accel_max)) {
-        // accel_max of zero means no limit so use maximum acceleration
+        // accel_max 为零表示无限制，因此使用最大加速度
         atc_accel_max = AR_WPNAV_ACCEL_MAX;
     }
     return is_positive(_accel_max) ? MIN(_accel_max, atc_accel_max) : atc_accel_max;

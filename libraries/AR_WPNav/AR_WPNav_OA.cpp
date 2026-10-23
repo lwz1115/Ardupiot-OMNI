@@ -22,11 +22,11 @@
 
 extern const AP_HAL::HAL& hal;
 
-// update navigation
+// 更新导航
 void AR_WPNav_OA::update(float dt)
 {
 #if AP_OAPATHPLANNER_ENABLED
-    // exit immediately if no current location, origin or destination
+    // 若无当前位置、起点或目标则立即退出
     Location current_loc;
     float speed;
     if (!hal.util->get_soft_armed() || !is_destination_valid() || !AP::ahrs().get_location(current_loc) || !_atc.get_forward_speed(speed)) {
@@ -37,10 +37,10 @@ void AR_WPNav_OA::update(float dt)
         return;
     }
 
-    // run path planning around obstacles
+    // 运行绕障路径规划
     bool stop_vehicle = false;
 
-    // backup _origin, _destination and _next_destination when not doing oa
+    // 未进行避障时备份 _origin、_destination 和 _next_destination
     if (!_oa_active) {
         _origin_oabak = _origin;
         _destination_oabak = _destination;
@@ -66,9 +66,9 @@ void AR_WPNav_OA::update(float dt)
 
         case AP_OAPathPlanner::OA_NOT_REQUIRED:
             if (_oa_active) {
-                // object avoidance has become inactive so reset target to original destination
+                // 避障已失效，因此将目标重置为原始目标
                 if (!AR_WPNav::set_desired_location(_destination_oabak)) {
-                    // this should never happen because we should have an EKF origin and the destination must be valid
+                    // 不应发生，因为应有 EKF 原点且目标必须有效
                     INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
                     stop_vehicle = true;
                 }
@@ -79,33 +79,33 @@ void AR_WPNav_OA::update(float dt)
 
         case AP_OAPathPlanner::OA_PROCESSING:
         case AP_OAPathPlanner::OA_ERROR:
-            // during processing or in case of error, slow vehicle to a stop
+            // 处理中或出错时，让车辆减速停车
             stop_vehicle = true;
             _oa_active = false;
             break;
 
         case AP_OAPathPlanner::OA_SUCCESS:
-            // handling of returned destination depends upon path planner used
+            // 返回目标的处理方式取决于使用的路径规划器
             switch (path_planner_used) {
 
             case AP_OAPathPlanner::OAPathPlannerUsed::None:
             case AP_OAPathPlanner::OAPathPlannerUsed::BendyRulerVertical:
-                // this should never happen.  this means the path planner has returned success but has returned an invalid planner
+                // 不应发生。这表示路径规划器返回成功但返回了无效的规划器
                 INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
                 _oa_active = false;
                 stop_vehicle = true;
                 return;
 
             case AP_OAPathPlanner::OAPathPlannerUsed::Dijkstras:
-                // Dijkstra's.  Action is only needed if path planner has just became active or the target destination's lat or lon has changed
+                // Dijkstra 算法。仅当路径规划器刚激活或目标位置的纬度/经度发生变化时才需要动作
                 if (!_oa_active || !oa_destination_new.same_latlon_as(_oa_destination)) {
                     if (AR_WPNav::set_desired_location(oa_destination_new)) {
-                        // if new target set successfully, update oa state and destination
+                        // 若新目标设置成功，更新避障状态和目标
                         _oa_active = true;
                         _oa_origin = oa_origin_new;
                         _oa_destination = oa_destination_new;
                     } else {
-                        // this should never happen
+                        // 不应发生
                         INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
                         stop_vehicle = true;
                     }
@@ -113,15 +113,15 @@ void AR_WPNav_OA::update(float dt)
                 break;
 
             case AP_OAPathPlanner::OAPathPlannerUsed::BendyRulerHorizontal: {
-                // BendyRuler.  Action is only needed if path planner has just became active or the target destination's lat or lon has changed
+                // BendyRuler。仅当路径规划器刚激活或目标位置的纬度/经度发生变化时才需要动作
                 if (!_oa_active || !oa_destination_new.same_latlon_as(_oa_destination)) {
                     if (AR_WPNav::set_desired_location_expect_fast_update(oa_destination_new)) {
-                        // if new target set successfully, update oa state and destination
+                        // 若新目标设置成功，更新避障状态和目标
                         _oa_active = true;
                         _oa_origin = oa_origin_new;
                         _oa_destination = oa_destination_new;
                     } else {
-                        // this should never happen
+                        // 不应发生
                         INTERNAL_ERROR(AP_InternalError::error_t::flow_of_control);
                         stop_vehicle = true;
                     }
@@ -135,9 +135,9 @@ void AR_WPNav_OA::update(float dt)
 
     update_oa_distance_and_bearing_to_destination();
 
-    // handle stopping vehicle if avoidance has failed
+    // 避障失败时处理停车
     if (stop_vehicle) {
-        // decelerate to speed to zero and set turn rate to zero
+        // 减速到零并将转向率设为零
         _desired_speed_limited = _atc.get_desired_speed_accel_limited(0.0f, dt);
         _desired_lat_accel = 0.0f;
         _desired_turn_rate_rads = 0.0f;
@@ -145,28 +145,28 @@ void AR_WPNav_OA::update(float dt)
     }
 #endif  // AP_OAPATHPLANNER_ENABLED
 
-    // call parent update
+    // 调用父类 update
     AR_WPNav::update(dt);
 }
 
-// set desired location and (optionally) next_destination
-// next_destination should be provided if known to allow smooth cornering
+// 设置目标位置，以及（可选的）下一目标点
+// 若已知下一目标点应提供，以实现平滑转弯
 bool AR_WPNav_OA::set_desired_location(const Location& destination, Location next_destination)
 {
     const bool ret = AR_WPNav::set_desired_location(destination, next_destination);
 
     if (ret) {
-        // disable object avoidance, it will be re-enabled (if necessary) on next update
+        // 禁用避障，下次更新时将按需重新启用
         _oa_active = false;
     }
 
     return ret;
 }
 
-// true if vehicle has reached desired location. defaults to true because this is normally used by missions and we do not want the mission to become stuck
+// 车辆是否已到达目标位置。默认返回 true，因为此接口通常用于任务系统，不希望任务卡死
 bool AR_WPNav_OA::reached_destination() const
 {
-    // object avoidance should always be deactivated before reaching final destination
+    // 到达最终目标前避障应始终停用
     if (_oa_active) {
         return false;
     }
@@ -174,7 +174,7 @@ bool AR_WPNav_OA::reached_destination() const
     return AR_WPNav::reached_destination();
 }
 
-// get object avoidance adjusted origin. Note: this is not guaranteed to be valid (i.e. _orig_and_dest_valid is not checked)
+// 获取经避障调整后的起点。注意：不保证有效（即未检查 _orig_and_dest_valid）
 const Location &AR_WPNav_OA::get_oa_origin() const
 {
     if (_oa_active) {
@@ -184,7 +184,7 @@ const Location &AR_WPNav_OA::get_oa_origin() const
     return _origin;
 }
 
-// get object avoidance adjusted destination. Note: this is not guaranteed to be valid (i.e. _orig_and_dest_valid is not checked)
+// 获取经避障调整后的终点。注意：不保证有效（即未检查 _orig_and_dest_valid）
 const Location &AR_WPNav_OA::get_oa_destination() const
 {
     if (_oa_active) {
@@ -194,7 +194,7 @@ const Location &AR_WPNav_OA::get_oa_destination() const
     return AR_WPNav::get_oa_destination();
 }
 
-// return the heading (in centi-degrees) to the next waypoint accounting for OA, (used by sailboats)
+// 返回考虑避障后的到下一航点方位（百分度），（供帆船使用）
 float AR_WPNav_OA::oa_wp_bearing_cd() const
 {
     if (_oa_active) {
@@ -204,10 +204,10 @@ float AR_WPNav_OA::oa_wp_bearing_cd() const
     return AR_WPNav::oa_wp_bearing_cd();
 }
 
-// update distance from vehicle's current position to destination
+// 更新从车辆当前位置到目标的距离
 void AR_WPNav_OA::update_oa_distance_and_bearing_to_destination()
 {
-    // update OA adjusted values
+    // 更新经避障调整后的值
     Location current_loc;
     if (_oa_active && AP::ahrs().get_location(current_loc)) {
         _oa_distance_to_destination = current_loc.get_distance(_oa_destination);

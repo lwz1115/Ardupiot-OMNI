@@ -7,180 +7,180 @@
 class AR_AttitudeControl {
 public:
 
-    // constructor
+    // 构造函数
     AR_AttitudeControl();
 
-    // do not allow copying
+    // 禁止拷贝
     CLASS_NO_COPY(AR_AttitudeControl);
 
     static AR_AttitudeControl *get_singleton() { return _singleton; }
 
     //
-    // steering controller
+    // 转向控制器
     //
 
-    // return a steering servo output given a desired lateral acceleration rate in m/s/s.
-    // positive lateral acceleration is to the right.  dt should normally be the main loop rate.
-    // return value is normally in range -1.0 to +1.0 but can be higher or lower
+    // 根据期望横向加速度（m/s/s）返回转向舵机输出。
+    // 正的横向加速度为向右。dt 通常应为主循环周期。
+    // 返回值通常在 -1.0 到 +1.0 之间，但可能更高或更低
     float get_steering_out_lat_accel(float desired_accel, bool motor_limit_left, bool motor_limit_right, float dt);
 
-    // return a steering servo output given a heading in radians
-    // set rate_max_rads to a non-zero number to apply a limit on the desired turn rate
-    // return value is normally in range -1.0 to +1.0 but can be higher or lower
+    // 根据航向（弧度）返回转向舵机输出
+    // 将 rate_max_rads 设置为非零值以限制期望转向率
+    // 返回值通常在 -1.0 到 +1.0 之间，但可能更高或更低
     float get_steering_out_heading(float heading_rad, float rate_max_rads, bool motor_limit_left, bool motor_limit_right, float dt);
 
-    // return a desired turn-rate given a desired heading in radians
-    // normally the results are later passed into get_steering_out_rate
+    // 根据期望航向（弧度）返回期望转向率
+    // 结果通常随后传入 get_steering_out_rate
     float get_turn_rate_from_heading(float heading_rad, float rate_max_rads) const;
 
-    // return a steering servo output given a desired yaw rate in radians/sec.
-    // positive yaw is to the right
-    // return value is normally in range -1.0 to +1.0 but can be higher or lower
-    // also sets steering_limit_left and steering_limit_right flags
+    // 根据期望偏航角速度（弧度/秒）返回转向舵机输出。
+    // 正向偏航为向右
+    // 返回值通常在 -1.0 到 +1.0 之间，但可能更高或更低
+    // 同时设置 steering_limit_left 和 steering_limit_right 标志
     float get_steering_out_rate(float desired_rate, bool motor_limit_left, bool motor_limit_right, float dt);
 
-    // get latest desired turn rate in rad/sec recorded during calls to get_steering_out_rate.  For reporting purposes only
+    // 获取调用 get_steering_out_rate 期间记录的最新期望转向率（rad/s）。仅供上报
     float get_desired_turn_rate() const;
 
-    // get latest desired lateral acceleration in m/s/s recorded during calls to get_steering_out_lat_accel.  For reporting purposes only
+    // 获取调用 get_steering_out_lat_accel 期间记录的最新期望横向加速度（m/s/s）。仅供上报
     float get_desired_lat_accel() const;
 
-    // get actual lateral acceleration in m/s/s.  returns true on success.  For reporting purposes only
+    // 获取实际横向加速度（m/s/s）。成功返回 true。仅供上报
     bool get_lat_accel(float &lat_accel) const;
 
-    // calculate the turn rate in rad/sec given a lateral acceleration (in m/s/s) and speed (in m/s)
+    // 根据横向加速度（m/s/s）和速度（m/s）计算转向率（rad/s）
     float get_turn_rate_from_lat_accel(float lat_accel, float speed) const;
 
-    // get the lateral acceleration limit (in m/s/s).  Returns at least 0.1G or approximately 1 m/s/s
+    // 获取横向加速度限制（m/s/s）。返回至少 0.1G 或约 1 m/s/s
     float get_turn_lat_accel_max() const { return MAX(_turn_lateral_G_max, 0.1f) * GRAVITY_MSS; }
 
-    // returns true if the steering has been limited which can be caused by the physical steering surface
-    // reaching its physical limits (aka motor limits) or acceleration or turn rate limits being applied
+    // 若转向已被限制则返回 true，可能由物理转向面
+    // 到达其物理极限（即电机极限）或应用了加速度/转向率限制引起
     bool steering_limit_left() const { return _steering_limit_left; }
     bool steering_limit_right() const { return _steering_limit_right; }
 
     //
-    // throttle / speed controller
+    // 油门 / 速度控制器
     //
 
-    // set limits used by throttle controller
-    //   forward/back acceleration max in m/s/s
-    //   forward/back deceleartion max in m/s/s
+    // 设置油门控制器使用的限制
+    //   前后向最大加速度（m/s/s）
+    //   前后向最大减速度（m/s/s）
     void set_throttle_limits(float throttle_accel_max, float throttle_decel_max);
 
-    // return a throttle output from -1 to +1 given a desired speed in m/s (use negative speeds to travel backwards)
-    //   desired_speed argument should already have been passed through get_desired_speed_accel_limited function
-    //   motor_limit should be true if motors have hit their upper or lower limits
-    //   cruise speed should be in m/s, cruise throttle should be a number from -1 to +1
+    // 根据期望速度（m/s）返回 -1 到 +1 的油门输出（负速度表示倒车）
+    //   desired_speed 参数应已通过 get_desired_speed_accel_limited 函数
+    //   若电机已达上/下限，motor_limit 应为 true
+    //   巡航速度单位为 m/s，巡航油门为 -1 到 +1 的数字
     float get_throttle_out_speed(float desired_speed, bool motor_limit_low, bool motor_limit_high, float cruise_speed, float cruise_throttle, float dt);
 
-    // return a throttle output from -1 to +1 to perform a controlled stop.  stopped is set to true once stop has been completed
+    // 返回 -1 到 +1 的油门输出以执行受控停车。停车完成后 stopped 被设置为 true
     float get_throttle_out_stop(bool motor_limit_low, bool motor_limit_high, float cruise_speed, float cruise_throttle, float dt, bool &stopped);
 
-    // balancebot pitch to throttle controller
-    // returns a throttle output from -1 to +1 given a desired pitch angle (in radians)
-    // pitch_max should be the user defined max pitch angle (in radians)
-    // motor_limit should be true if the motors have hit their upper or lower limit
+    // 平衡机器人俯仰到油门控制器
+    // 根据期望俯仰角（弧度）返回 -1 到 +1 的油门输出
+    // pitch_max 应为用户定义的最大俯仰角（弧度）
+    // 若电机已达上/下限，motor_limit 应为 true
     float get_throttle_out_from_pitch(float desired_pitch, float pitch_max, bool motor_limit, float dt);
 
-    // returns true if the pitch angle has been limited to prevent falling over
-    // pitch limit protection is implemented within get_throttle_out_from_pitch
+    // 若俯仰角已被限制以防止翻倒则返回 true
+    // 俯仰限制保护在 get_throttle_out_from_pitch 内部实现
     bool pitch_limited() const { return _pitch_limited; }
 
-    // get latest desired pitch in radians for reporting purposes
+    // 获取最新期望俯仰角（弧度），仅供上报
     float get_desired_pitch() const;
 
-    // Sailboat heel(roll) angle contorller, release sail to keep at maximum heel angle
+    // 帆船横倾（滚转）角控制器，释放帆以保持最大横倾角
     float get_sail_out_from_heel(float desired_heel, float dt);
 
-    // low level control accessors for reporting and logging
+    // 低层控制访问器，用于上报和日志
     AC_P& get_steering_angle_p() { return _steer_angle_p; }
     AC_PID& get_steering_rate_pid() { return _steer_rate_pid; }
     AC_PID& get_pitch_to_throttle_pid() { return _pitch_to_throttle_pid; }
     AC_PID& get_sailboat_heel_pid() { return _sailboat_heel_pid; }
     const AP_PIDInfo& get_throttle_speed_pid_info() const { return _throttle_speed_pid_info; }
 
-    // set the PID notch sample rates
+    // 设置 PID 陷波采样率
     void set_notch_sample_rate(float sample_rate);
 
-    // get the slew rate value for speed and steering for oscillation detection in lua scripts
+    // 获取速度和转向的转换速率值，供 lua 脚本进行振荡检测
     void get_srate(float &steering_srate, float &speed_srate);
 
-    // get forward speed in m/s (earth-frame horizontal velocity but only along vehicle x-axis).  returns true on success
+    // 获取前进速度（m/s）（大地坐标系水平速度，但仅沿车辆 x 轴）。成功返回 true
     bool get_forward_speed(float &speed) const;
 
-    // get throttle/speed controller maximum acceleration (also used for deceleration)
+    // 获取油门/速度控制器最大加速度（也用于减速）
     float get_accel_max() const { return MAX(_throttle_accel_max, 0.0f); }
 
-    // get throttle/speed controller maximum deceleration
+    // 获取油门/速度控制器最大减速度
     float get_decel_max() const;
 
-    // check if speed controller active
+    // 检查速度控制器是否激活
     bool speed_control_active() const;
 
-    // get latest desired speed recorded during call to get_throttle_out_speed.  For reporting purposes only
+    // 获取调用 get_throttle_out_speed 期间记录的最新期望速度。仅供上报
     float get_desired_speed() const;
 
-    // get acceleration limited desired speed
+    // 获取受加速度限制的期望速度
     float get_desired_speed_accel_limited(float desired_speed, float dt) const;
 
-    // get minimum stopping distance (in meters) given a speed (in m/s)
+    // 根据速度（m/s）获取最小停车距离（米）
     float get_stopping_distance(float speed) const;
 
-    // get speed below which vehicle is considered stopped (in m/s)
+    // 获取车辆被认为已停止的速度下限（m/s）
     float get_stop_speed() const { return MAX(_stop_speed, 0.0f); }
 
-    // relax I terms of throttle and steering controllers
+    // 放松油门和转向控制器的 I 项
     void relax_I();
 
-    // parameter var table
+    // 参数变量表
     static const struct AP_Param::GroupInfo var_info[];
 
 private:
 
     static AR_AttitudeControl *_singleton;
 
-    // parameters
-    AC_P     _steer_angle_p;        // steering angle controller
-    AC_PID   _steer_rate_pid;       // steering rate controller
-    AC_PID   _throttle_speed_pid;   // throttle speed controller
-    AC_PID   _pitch_to_throttle_pid;// balancebot pitch controller
-    AP_Float _pitch_to_throttle_ff; // balancebot feed forward from current pitch angle
-    AP_Float _pitch_limit_tc;       // balancebot pitch limit protection time constant
-    AP_Float _pitch_limit_throttle_thresh;  // balancebot pitch limit throttle threshold (in the range 0 to 1.0)
+    // 参数
+    AC_P     _steer_angle_p;        // 转向角控制器
+    AC_PID   _steer_rate_pid;       // 转向率控制器
+    AC_PID   _throttle_speed_pid;   // 油门速度控制器
+    AC_PID   _pitch_to_throttle_pid;// 平衡机器人俯仰控制器
+    AP_Float _pitch_to_throttle_ff; // 平衡机器人由当前俯仰角的前馈
+    AP_Float _pitch_limit_tc;       // 平衡机器人俯仰限制保护时间常数
+    AP_Float _pitch_limit_throttle_thresh;  // 平衡机器人俯仰限制油门阈值（范围 0 到 1.0）
 
-    AP_Float _throttle_accel_max;   // speed/throttle control acceleration (and deceleration) maximum in m/s/s.  0 to disable limits
-    AP_Float _throttle_decel_max;    // speed/throttle control deceleration maximum in m/s/s. 0 to use ATC_ACCEL_MAX for deceleration
-    AP_Int8  _brake_enable;         // speed control brake enable/disable. if set to 1 a reversed output to the motors to slow the vehicle.
-    AP_Float _stop_speed;           // speed control stop speed.  Motor outputs to zero once vehicle speed falls below this value
-    AP_Float _steer_accel_max;      // steering angle acceleration max in deg/s/s
-    AP_Float _steer_decel_max;      // steering angle deceleration max in deg/s/s
-    AP_Float _steer_rate_max;       // steering rate control maximum rate in deg/s
-    AP_Float _turn_lateral_G_max;   // sterring maximum lateral acceleration limit in 'G'
+    AP_Float _throttle_accel_max;   // 速度/油门控制最大加速度（和减速度）（m/s/s）。0 表示禁用限制
+    AP_Float _throttle_decel_max;    // 速度/油门控制最大减速度（m/s/s）。0 表示减速使用 ATC_ACCEL_MAX
+    AP_Int8  _brake_enable;         // 速度控制刹车使能/禁用。若设为 1，向电机输出反向信号以减慢车辆
+    AP_Float _stop_speed;           // 速度控制停车速度。车辆速度低于此值后电机输出归零
+    AP_Float _steer_accel_max;      // 转向角最大加速度（deg/s/s）
+    AP_Float _steer_decel_max;      // 转向角最大减速度（deg/s/s）
+    AP_Float _steer_rate_max;       // 转向率控制最大速率（deg/s）
+    AP_Float _turn_lateral_G_max;   // 转向最大横向加速度限制（'G'）
 
-    // steering control
-    uint32_t _steer_lat_accel_last_ms;  // system time of last call to lateral acceleration controller (i.e. get_steering_out_lat_accel)
-    uint32_t _steer_turn_last_ms;   // system time of last call to steering rate controller
-    float    _desired_lat_accel;    // desired lateral acceleration (in m/s/s) from latest call to get_steering_out_lat_accel (for reporting purposes)
-    float    _desired_turn_rate;    // desired turn rate (in radians/sec) either from external caller or from lateral acceleration controller
-    bool     _steering_limit_left;  // true when the steering control has reached its left limit (e.g. motor has reached limits or accel or turn rate limits applied)
-    bool     _steering_limit_right; // true when the steering control has reached its right limit (e.g. motor has reached limits or accel or turn rate limits applied)
+    // 转向控制
+    uint32_t _steer_lat_accel_last_ms;  // 上次调用横向加速度控制器（即 get_steering_out_lat_accel）的系统时间
+    uint32_t _steer_turn_last_ms;   // 上次调用转向率控制器的系统时间
+    float    _desired_lat_accel;    // 最近一次调用 get_steering_out_lat_accel 得到的期望横向加速度（m/s/s）（仅供上报）
+    float    _desired_turn_rate;    // 期望转向率（弧度/秒），来自外部调用者或横向加速度控制器
+    bool     _steering_limit_left;  // 转向控制到达左极限时为 true（例如电机到达极限或应用了加速度/转向率限制）
+    bool     _steering_limit_right; // 转向控制到达右极限时为 true（例如电机到达极限或应用了加速度/转向率限制）
 
-    // throttle control
-    uint32_t _speed_last_ms;        // system time of last call to get_throttle_out_speed
-    float    _desired_speed;        // last recorded desired speed
-    uint32_t _stop_last_ms;         // system time the vehicle was at a complete stop
-    bool     _throttle_limit_low;   // throttle output was limited from going too low (used to reduce i-term buildup)
-    bool     _throttle_limit_high;  // throttle output was limited from going too high (used to reduce i-term buildup)
-    AP_PIDInfo _throttle_speed_pid_info;   // local copy of throttle_speed controller's PID info to allow reporting of unusual FF
+    // 油门控制
+    uint32_t _speed_last_ms;        // 上次调用 get_throttle_out_speed 的系统时间
+    float    _desired_speed;        // 最后记录的期望速度
+    uint32_t _stop_last_ms;         // 车辆完全停止时的系统时间
+    bool     _throttle_limit_low;   // 油门输出被限制过低（用于减少 I 项累积）
+    bool     _throttle_limit_high;  // 油门输出被限制过高（用于减少 I 项累积）
+    AP_PIDInfo _throttle_speed_pid_info;   // throttle_speed 控制器 PID 信息的本地副本，用于上报异常 FF
 
-    // balancebot pitch control
-    uint32_t _balance_last_ms = 0;  // system time that get_throttle_out_from_pitch was last called
-    float _pitch_limit_low = 0;     // min desired pitch (in radians) used to protect against falling over
-    float _pitch_limit_high = 0;    // max desired pitch (in radians) used to protect against falling over
-    bool _pitch_limited = false;    // true if pitch was limited on last call to get_throttle_out_from_pitch
+    // 平衡机器人俯仰控制
+    uint32_t _balance_last_ms = 0;  // 上次调用 get_throttle_out_from_pitch 的系统时间
+    float _pitch_limit_low = 0;     // 最小期望俯仰角（弧度），用于防止翻倒
+    float _pitch_limit_high = 0;    // 最大期望俯仰角（弧度），用于防止翻倒
+    bool _pitch_limited = false;    // 上次调用 get_throttle_out_from_pitch 时俯仰被限制则为 true
 
-    // Sailboat heel control
-    AC_PID   _sailboat_heel_pid;    // Sailboat heel angle pid controller
+    // 帆船横倾控制
+    AC_PID   _sailboat_heel_pid;    // 帆船横倾角 PID 控制器
     uint32_t _heel_controller_last_ms = 0;
 };
