@@ -116,6 +116,19 @@ public:
     // returns true if the vehicle is omni
     bool is_omni() const { return _frame_type != FRAME_TYPE_UNDEFINED && _motors_num > 0; }
 
+    // 电机对：全向机架在差速模式下只激活部分电机（其余输出 TRIM 停转）
+    enum class MotorPair : uint8_t {
+        ALL   = 0,  // 全部电机参与（悬停/全向平移）
+        REAR  = 1,  // 只激活后电机对 M2/M3（手动/自动/穿梭去程差速）
+        FRONT = 2,  // 只激活前电机对 M0/M1（穿梭回程倒车差速）
+    };
+
+    // 设置激活的电机对
+    void set_motor_pair(MotorPair pair) { _motor_pair = pair; }
+
+    // 当前激活的电机对
+    MotorPair get_motor_pair() const { return _motor_pair; }
+
     // Return the relay index that would be used for param conversion to relay functions
     bool get_legacy_relay_index(int8_t &index1, int8_t &index2, int8_t &index3, int8_t &index4) const;
 
@@ -246,6 +259,9 @@ private:
     float   _steering_factor[AP_MOTORS_NUM_MOTORS_MAX];
     float   _lateral_factor[AP_MOTORS_NUM_MOTORS_MAX];
     uint8_t   _motors_num;
+
+    // 差速模式激活的电机对（默认全部，保持原有全向行为）
+    MotorPair _motor_pair = MotorPair::ALL;
 
     /*
       3 reversal handling structures, for k_throttle, k_throttleLeft and k_throttleRight

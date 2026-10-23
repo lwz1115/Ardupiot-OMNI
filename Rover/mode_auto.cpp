@@ -19,6 +19,10 @@ bool ModeAuto::_enter()
     // clear guided limits
     rover.mode_guided.limit_clear();
 
+    // 进入 AUTO 时保持全部电机（ALL）：is_boat 会先进入 loiter 全向悬停，
+    // 等到 WP 子模式时才切到后电机差速。
+    g2.motors.set_motor_pair(AP_MotorsUGV::MotorPair::ALL);
+
     // initialise submode to stop or loiter
     if (rover.is_boat()) {
         if (!start_loiter()) {
@@ -40,6 +44,10 @@ void ModeAuto::_exit()
     if (mission.state() == AP_Mission::MISSION_RUNNING) {
         mission.stop();
     }
+
+    // 恢复全电机对，避免影响其他模式（悬停需要四电机全向）
+    g2.motors.set_motor_pair(AP_MotorsUGV::MotorPair::ALL);
+    g2.motors.set_lateral(0);
 }
 
 void ModeAuto::update()
@@ -82,9 +90,16 @@ void ModeAuto::update()
     switch (_submode) {
         case SubMode::WP:
         {
+            // WP 导航按差速船驱动：只用后电机对（右后/左后），前电机停转，
+            // 减少对船中 ADCP 水流的干扰。差速模式下 omni_translate_enabled()
+            // 返回 false，导航自动走标准转向（L1）+ 油门路径。
+            g2.motors.set_motor_pair(AP_MotorsUGV::MotorPair::REAR);
+
             // boats loiter once the waypoint is reached
             bool keep_navigating = true;
             if (rover.is_boat() && g2.wp_nav.reached_destination() && !g2.wp_nav.is_fast_waypoint()) {
+                // 到点悬停需要全向四电机，切回 ALL 再进入 loiter
+                g2.motors.set_motor_pair(AP_MotorsUGV::MotorPair::ALL);
                 keep_navigating = !start_loiter();
             }
 
@@ -121,6 +136,8 @@ void ModeAuto::update()
             break;
 
         case SubMode::Loiter:
+            // 悬停需要全向四电机，确保 WP 差速段切走 REAR 后此处恢复 ALL
+            g2.motors.set_motor_pair(AP_MotorsUGV::MotorPair::ALL);
             rover.mode_loiter.update();
             break;
 

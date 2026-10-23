@@ -1,0 +1,45 @@
+# OmniX SITL 专用参数集
+# 注意: 不含真机 GPS1_TYPE 25 / UM982 配置, 让 SITL 模拟器使用默认 GPS (3D fix)
+# 手动/自动差速改造验证用
+
+# --- Frame ---
+FRAME_CLASS 2
+FRAME_TYPE 2
+
+# --- Heading source: SITL 用默认 compass 航向 (真机是 UM982 双天线, 仿真不模拟) ---
+# SIM_GPS1_HDG 未配基线时会导致航向无效/EKF 挂起, 因此仿真统一用 compass
+COMPASS_ENABLE 1
+EK3_SRC1_YAW 1
+
+# --- OmniX ---
+OMNI_LAT_PCT 100
+OMNI_YAW_HOLD 0
+OMNI_VEL_GAIN 0.25
+
+# --- 差速船: 手动/自动只用后电机对 ---
+# (代码 ModeManual/ModeAuto _enter 设 MotorPair::REAR)
+
+# --- Battery: 绕过 SITL 低压解锁保护 ---
+BATT_LOW_VOLT 0
+BATT_CRT_VOLT 0
+BATT_FS_LOW_ACT 1
+BATT_FS_CRT_ACT 1
+
+# --- Mission speed ---
+WP_SPEED 1.5
+WP_RADIUS 1
+WP_PIVOT_ANGLE 0
+
+# --- Motion ---
+MOT_SLEWRATE 90
+WP_ACCEL 0.8
+WP_JERK 1.0
+PSC_POS_P 0.1
+# --- Differential steering PID (native defaults boosted for rover) ---
+ATC_STR_RAT_P 0.5
+ATC_STR_RAT_I 0.2
+ATC_STR_RAT_FF 0.2
+PSC_VEL_P 1.0
+ATC_SPEED_P 0.5
+CRUISE_SPEED 1.5
+CRUISE_THROTTLE 50

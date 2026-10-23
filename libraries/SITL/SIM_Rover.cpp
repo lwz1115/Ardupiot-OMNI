@@ -314,10 +314,10 @@ void SimRover::update_omni3(const struct sitl_input &input, float delta_time)
   omniX 是 X 形机架，装有 4 个以固定 45 度角安装的推进器（每个角落一个，
   朝外推进）。这与 AP_MotorsUGV FRAME_TYPE_OMNIX 的几何结构相同：
 
-    电机 0 : 右前推进器，朝外右方推进
-    电机 1 : 左前推进器，朝外左方推进
-    电机 2 : 右后推进器，朝外右方推进
-    电机 3 : 左后推进器，朝外左方推进
+    电机 0 : 右前推进器，朝外右方推进 (SERVO1)
+    电机 1 : 右后推进器，朝外右方推进 (SERVO2)
+    电机 2 : 左后推进器，朝外左方推进 (SERVO3)
+    电机 3 : 左前推进器，朝外左方推进 (SERVO4)
 
   每个推进器贡献一个机体坐标系力：
 
@@ -347,18 +347,58 @@ void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
         }
     }
 
-    // AP_MotorsUGV::output_omni() 使用以下混合器：
-    //  m0 = t - s - l
-    //  m1 = t - s + l
-    //  m2 = t + s - l
-    //  m3 = t + s + l
+    // 后两电机差速模式（REAR：前电机停转，手动/自动/穿梭去程用）：
+    // 真机后两推进器(1右后、2左后)以 V 形斜向后推水，差速产生偏航力矩，
+    // 行为与原生差速船(skid)一致。标准 X 形逆矩阵在此模式下会串扰
+    // （把差速误判成横移、把油门误判成偏航），因此单独按差速船物理模拟。
+    const bool rear_pair_active = (fabsf(thr[0]) < 0.01f) &&
+                                  (fabsf(thr[3]) < 0.01f) &&
+                                  (fabsf(thr[1]) > 0.01f || fabsf(thr[2]) > 0.01f);
+
+    Vector3f velocity_body = dcm.transposed() * velocity_ef;
+
+    if (rear_pair_active) {
+        // 差速船物理（与原生 SIM_Rover::update_ackermann_or_skid 一致）：
+        //   motor_left  = thr[2] (左后电机 SERVO3, 固件 REAR 输出 t+s)
+        //   motor_right = thr[1] (右后电机 SERVO2, 固件 REAR 输出 t-s)
+        //   steering = left - right, throttle = 0.5*(left + right)
+        const float motor_left  = thr[2];
+        const float motor_right = thr[1];
+        const float steering = motor_left - motor_right;
+        const float throttle = 0.5f * (motor_left + motor_right);
+
+        // 船体 x 向速度
+        const float speed = velocity_body.x;
+
+        // 目标速度与加速度（一阶油门模型，与原生差速船相同）
+        const float target_speed = throttle * max_speed;
+        const float accel = max_accel * (target_speed - speed) / max_speed;
+
+        // 偏航率（与原生 skid 模型一致，低速也可原地转向）
+        const float yaw_rate = calc_yaw_rate(steering, speed);
+
+        gyro = Vector3f(0, 0, radians(yaw_rate) + radians(omnix_yaw_drift));
+        dcm.rotate(gyro * delta_time);
+        dcm.normalize();
+
+        // 纵向加速度 + 转弯向心加速度
+        accel_body = Vector3f(accel, 0, 0);
+        accel_body.y += radians(yaw_rate) * speed;
+        return;
+    }
+
+    // AP_MotorsUGV::output_omni() 使用以下混合器（电机编号按实际物理接线）：
+    //  m0(右前) = t - s - l
+    //  m1(右后) = t + s - l
+    //  m2(左后) = t + s + l
+    //  m3(左前) = t - s + l
     // 求逆以获得仿真使用的机体坐标系指令。
     // t、s、l 各自在混合矩阵的每一列中出现一次 +1 和一次 -1，
     // 因此逆矩阵为转置矩阵乘以 1/4（= 1/电机数）。
     const float inv_mix_scale = 0.25f;
     const float throttle_cmd  = inv_mix_scale * ( thr[0] + thr[1] + thr[2] + thr[3]);
-    const float steering_cmd  = inv_mix_scale * (-thr[0] - thr[1] + thr[2] + thr[3]);
-    const float lateral_cmd   = inv_mix_scale * (-thr[0] + thr[1] - thr[2] + thr[3]);
+    const float steering_cmd  = inv_mix_scale * (-thr[0] + thr[1] + thr[2] - thr[3]);
+    const float lateral_cmd   = inv_mix_scale * (-thr[0] - thr[1] + thr[2] + thr[3]);
 
     const float surge_target = throttle_cmd * omnix_max_speed;
     // 注意：此处符号必须与 AP_MotorsUGV::setup_omni()（FRAME_TYPE_OMNIX）
@@ -367,9 +407,6 @@ void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
     // 使所有侧向穿梭平移反向。
     const float sway_target  = -lateral_cmd * omnix_max_lateral_speed;
     const float yaw_target   = steering_cmd * radians(omnix_max_yaw_rate);
-
-    // 当前机体坐标系速度
-    Vector3f velocity_body = dcm.transposed() * velocity_ef;
 
     // 非常粗略的一阶油门模型。纯比例 accel = gain * (target - velocity)
     // 使稳态速度等于指令的目标速度。若在此处额外加入线性阻尼项，会把稳态

@@ -667,11 +667,14 @@ void AP_MotorsUGV::setup_omni()
         break;
 
     case FRAME_TYPE_OMNIX:
+        // 物理接线（用户实测）：SERVO1=右前, SERVO2=右后, SERVO3=左后, SERVO4=左前
+        // 电机编号 = 通道号（get_motor_function: 0->k_motor1=SERVO1 ... 3->k_motor4=SERVO4）
+        // 系数与 SIM_Rover.cpp 的 OmniX 逆混控保持一致：正油门=前进, 正转向=右转, 正横向=右移
         _motors_num = 4,
-        add_omni_motor(0, 1.0f, -1.0f, -1.0f);
-        add_omni_motor(1, 1.0f, -1.0f, 1.0f);
-        add_omni_motor(2, 1.0f, 1.0f, -1.0f);
-        add_omni_motor(3, 1.0f, 1.0f, 1.0f);
+        add_omni_motor(0, 1.0f, -1.0f, -1.0f);  // 右前 (SERVO1)
+        add_omni_motor(1, 1.0f,  1.0f, -1.0f);  // 右后 (SERVO2)
+        add_omni_motor(2, 1.0f,  1.0f,  1.0f);  // 左后 (SERVO3)
+        add_omni_motor(3, 1.0f, -1.0f,  1.0f);  // 左前 (SERVO4)
         break;
 
     case FRAME_TYPE_OMNIPLUS:
@@ -960,6 +963,32 @@ void AP_MotorsUGV::output_omni(bool armed, float steering, float throttle, float
 
         // constrain steering
         steering = constrain_float(steering, -4500.0f, 4500.0f);
+
+        // 差速模式（REAR/FRONT）：只激活一对电机，用原生差速公式
+        //   motor_left  = throttle + steering
+        //   motor_right = throttle - steering
+        // 其余电机输出 TRIM(1500) 保持停转，避免搅动 ADCP 附近水流。
+        if (_motor_pair != MotorPair::ALL) {
+            const float scaled_throttle = constrain_float(throttle * 0.01f, -1.0f, 1.0f);
+            const float scaled_steering = constrain_float(steering / 4500.0f, -1.0f, 1.0f);
+            const float motor_left  = constrain_float(scaled_throttle + scaled_steering, -1.0f, 1.0f);
+            const float motor_right = constrain_float(scaled_throttle - scaled_steering, -1.0f, 1.0f);
+
+            const uint8_t left_motor  = (_motor_pair == MotorPair::REAR) ? 2 : 3;   // 后左/前左
+            const uint8_t right_motor = (_motor_pair == MotorPair::REAR) ? 1 : 0;   // 后右/前右
+
+            for (uint8_t i=0; i<_motors_num; i++) {
+                if (i == left_motor) {
+                    output_throttle(SRV_Channels::get_motor_function(i), motor_left * 100.0f);
+                } else if (i == right_motor) {
+                    output_throttle(SRV_Channels::get_motor_function(i), motor_right * 100.0f);
+                } else {
+                    // 未激活电机停转（TRIM = 中位 PWM）
+                    SRV_Channels::set_output_limit(SRV_Channels::get_motor_function(i), SRV_Channel::Limit::TRIM);
+                }
+            }
+            return;
+        }
 
         // scale throttle, steering and lateral inputs to -1 to 1
         const float scaled_throttle = throttle * 0.01f;

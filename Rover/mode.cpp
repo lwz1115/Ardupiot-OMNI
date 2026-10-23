@@ -436,97 +436,13 @@ void Mode::navigate_to_waypoint()
     }
 #endif
 
-    float desired_heading_cd = g2.wp_nav.oa_wp_bearing_cd();
-
-    if (omni_translate_enabled()) {
-        // 全向平移导航：全程跟随 SCurve 的世界系期望速度，不绕过它。
-        //
-        // 用 pos_control.get_vel_target()（位置误差 P 纠偏 + SCurve 前馈，
-        // 即"指向目标且修正横偏"的世界系速度，m/s）。把它按比例映射成
-        // 推力驱动电机，船就能跟随 SCurve：巡航保持速度、到点平滑减速、
-        // 途经点(fast)保持速度路过。船一直按 SCurve 的速度运动，SCurve
-        // 的 track_scalar_dt 不会塌陷，s_finished 能正常置位 —— 到达判定
-        // 完全由原生 reached_destination() 负责，不需要任何 hack。
-        //
-        // 到达语义（原生 AR_WPNav::reached_destination）：
-        //   - 普通航点：停稳(near_wp) 或 冲过终点线(past_wp) 都算到达；
-        //   - 途经点(fast waypoint)：SCurve 规划"路过不停"，直飞下一航点。
-        // 穿梭模式的到达悬停由 AP_Shuttle + loiter 单独处理，不受影响。
-
-        // 世界系期望速度（含纠偏），按 pos_control 的速度上限映射成推力。
-        const Vector2f vel_ne = g2.pos_control.get_vel_target();
-
-        // EKF 位置/速度不可用时的安全停车保护：
-        // AR_PosControl::update() 在位置/速度估计不可用（GPS 长时间丢失、
-        // EKF 发散等）时提前 return，_vel_target 不会被清零、保留最后值；
-        // 若直接拿去驱动，船会按旧速度继续盲冲。全向船没有转向自由度，
-        // 盲推比停车更危险，因此这里明确断开推力，等位置恢复再继续导航。
-        Vector3p _pos_m;
-        Vector3f _vel_ned;
-        if (!ahrs.get_relative_position_NED_origin(_pos_m) || !ahrs.get_velocity_NED(_vel_ned)) {
-            g2.motors.set_throttle(0);
-            g2.motors.set_lateral(0);
-            return;
-        }
-
-        // 锁船头（若机架可偏航）或完全关闭转向（无偏航硬件）。
-        if (g2.omni_yaw_hold > 0) {
-            calc_steering_to_heading(_omni_heading_cd);
-        } else {
-            g2.motors.set_steering(0);
-        }
-
-        if (g2.wp_nav.reached_destination()) {
-            // SCurve 原生判定到达：断开推力，避免在航点上用近零向量
-            // 继续驱动造成原地抽搐。
-            g2.motors.set_throttle(0);
-            g2.motors.set_lateral(0);
-            return;
-        }
-
-        // 世界系 NE 速度 → 船体系 surge(前)/sway(右)：
-        //   前向  = N·cos(yaw) + E·sin(yaw)
-        //   右向  = -N·sin(yaw) + E·cos(yaw)
-        const float yaw_rad = radians(ahrs.yaw_sensor * 0.01f);
-        const float surge_ms =  vel_ne.x * cosf(yaw_rad) + vel_ne.y * sinf(yaw_rad);
-        const float sway_ms  = -vel_ne.x * sinf(yaw_rad) + vel_ne.y * cosf(yaw_rad);
-
-        // 混合全向驱动：SCurve/位置P生成速度目标，作为原有主指令；
-        // 速度环反馈只作为有界的附加修正。这里特意排除 _accel_desired，
-        // 因为它是 SCurve 的加速度前馈，若与速度前馈再次叠加会重复计入。
-        // OMNI_VEL_GAIN=0 可完全回退到原有速度映射；先用小增益观察，
-        // 不将导航 accel_max 当成电机动力学标定，也不让 PID 一步顶满输出。
-        // 到达仍由原生 reached_destination() 判定，不增加近零速度切断。
-        const float speed_max = MAX(g2.pos_control.get_speed_max(), 0.1f);
-        const float accel_max = MAX(g2.pos_control.get_accel_max(), 0.1f);
-
-        // SCurve 前馈速度项（保留原有行为）
-        const float ff_surge = surge_ms / speed_max * 100.0f;
-        const float ff_sway  = sway_ms  / speed_max * 100.0f;
-
-        // 速度控制器反馈（NE 加速度）旋转到船体系，并按 gain 缩放。
-        // 再限制反馈修正向量的总幅度，防止瞬态/参数误设直接顶满电机。
-        const Vector2f accel_feedback = g2.pos_control.get_accel_feedback();
-        const float gain = constrain_float(g2.omni_vel_gain, 0.0f, 1.0f);
-        Vector2f correction_body{
-            (accel_feedback.x * cosf(yaw_rad) + accel_feedback.y * sinf(yaw_rad)) / accel_max * 100.0f * gain,
-            (-accel_feedback.x * sinf(yaw_rad) + accel_feedback.y * cosf(yaw_rad)) / accel_max * 100.0f * gain
-        };
-        correction_body.limit_length(30.0f);
-
-        // 合并并限幅；lateral 符号保持现有 OmniX 混控约定。
-        const float throttle_cmd = constrain_float(ff_surge + correction_body.x, -100.0f, 100.0f);
-        const float lateral_cmd  = constrain_float(ff_sway  + correction_body.y, -100.0f, 100.0f);
-        g2.motors.set_throttle(throttle_cmd);
-        g2.motors.set_lateral(-g2.omni_lat_pct * lateral_cmd);
-        return;
-    }
-
     _omni_leg_valid = false;
 
-    // 将期望速度传给油门控制器
-    // 不进行简单避障，因为该逻辑已在位置控制器中处理
+    // pass desired speed to throttle controller
+    // do not do simple avoidance because this is already handled in the position controller
     calc_throttle(g2.wp_nav.get_speed(), false);
+
+    float desired_heading_cd = g2.wp_nav.oa_wp_bearing_cd();
 
     if (g2.sailboat.use_indirect_route(desired_heading_cd)) {
         // 帆船在迎风换舷时使用航向控制器
@@ -597,7 +513,11 @@ void Mode::calc_steering_to_heading(float desired_heading_cd, float rate_max_deg
 // 当该模式应当横向平移而不是转向目标时返回 true
 bool Mode::omni_translate_enabled() const
 {
-    return g2.motors.is_omni() && g2.omni_lat_pct > 0;
+    // 差速模式（只激活部分电机）不参与全向平移：转向走标准差速导航，
+    // 横移通道在差速模式下无意义（未激活电机不会响应 lateral）。
+    return g2.motors.is_omni() &&
+           g2.omni_lat_pct > 0 &&
+           g2.motors.get_motor_pair() == AP_MotorsUGV::MotorPair::ALL;
 }
 
 // 在全向机架上保持船头稳定地驶向某方位角。
