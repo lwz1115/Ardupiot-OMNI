@@ -502,6 +502,8 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_packet(const mavlink_command_in
         return MAV_RESULT_FAILED;
 
     case MAV_CMD_USER_1:
+        // 旧两点穿梭协议（MAV_CMD_USER_1）——QGC 新版摆渡已删除此协议，
+        // 摆渡完全走标准 GUIDED。以下分支保留仅为兼容旧版 QGC，新版不会触发。
         // 两点穿梭子命令（param1）：
         //   0 = 查询状态
         //   1 = 停止穿梭
@@ -613,21 +615,10 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_packet(const mavlink_command_in
 
 MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_do_reposition(const mavlink_command_int_t &packet)
 {
-    // ---- 穿梭钩子：在任何状态改变之前先校验航程 ----
-    // 注意：我们刻意不在这里启动航程。航程只有在车辆确实进入 GUIDED
-    // 且新目标已被接受之后才启动，因此穿梭状态绝不会与车辆状态不一致
-    //（例如模式切换或位置设置失败时）。
-    const bool shuttle_wants_leg = rover.g2.shuttle.enabled();
-    if (shuttle_wants_leg) {
-        Location target {};
-        if (!location_from_command_t(packet, target)) {
-            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_LOC");
-            return MAV_RESULT_DENIED;
-        }
-        if (!rover.g2.shuttle.validate_leg(target)) {
-            return MAV_RESULT_DENIED;   // SHUTTLE_ERR_DIST 已上报
-        }
-    }
+    // 摆渡（Ferry）完全走标准 GUIDED 导航：QGC 新版已删除 MAV_CMD_USER_1
+    // 穿梭协议，DO_REPOSITION 不再需要旧 AP_Shuttle 的校验/状态机钩子。
+    // 电机对（REAR/FRONT）由 ModeGuided::set_desired_location() 按目标方向
+    // 自动选择，到达后 Loiter 自动切回全向。
 
     const bool change_modes = ((int32_t)packet.param2 & MAV_DO_REPOSITION_FLAGS_CHANGE_MODE) == MAV_DO_REPOSITION_FLAGS_CHANGE_MODE;
     if (!rover.control_mode->in_guided_mode() && !change_modes) {
@@ -664,11 +655,6 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_do_reposition(const mavlink_com
         if (!rover.control_mode->set_desired_speed(packet.param1)) {
             GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "RepositionSpeedFail");
         }
-    }
-
-    // 所有状态更改均成功：现在才启动穿梭航程。
-    if (shuttle_wants_leg) {
-        rover.g2.shuttle.begin_leg(requested_location);
     }
 
     return MAV_RESULT_ACCEPTED;

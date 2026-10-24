@@ -355,15 +355,26 @@ void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
                                   (fabsf(thr[3]) < 0.01f) &&
                                   (fabsf(thr[1]) > 0.01f || fabsf(thr[2]) > 0.01f);
 
+    // 前两电机差速模式（FRONT：后电机停转，摆渡回程 B→A 倒车用）：
+    // 前两推进器(0右前、3左前)以 V 形斜向前推水，差速同样产生偏航力矩，
+    // 但船整体向后（船尾方向）移动。与 REAR 对称：左前快→右转，右前快→左转。
+    const bool front_pair_active = (fabsf(thr[1]) < 0.01f) &&
+                                   (fabsf(thr[2]) < 0.01f) &&
+                                   (fabsf(thr[0]) > 0.01f || fabsf(thr[3]) > 0.01f);
+
     Vector3f velocity_body = dcm.transposed() * velocity_ef;
 
-    if (rear_pair_active) {
+    if (rear_pair_active || front_pair_active) {
         // 差速船物理（与原生 SIM_Rover::update_ackermann_or_skid 一致）：
-        //   motor_left  = thr[2] (左后电机 SERVO3, 固件 REAR 输出 t+s)
-        //   motor_right = thr[1] (右后电机 SERVO2, 固件 REAR 输出 t-s)
+        //   REAR : motor_left  = thr[2] (左后电机 SERVO3, 固件输出 t+s)
+        //          motor_right = thr[1] (右后电机 SERVO2, 固件输出 t-s)
+        //   FRONT: motor_left  = thr[3] (左前电机 SERVO4, 固件输出 t+s)
+        //          motor_right = thr[0] (右前电机 SERVO1, 固件输出 t-s)
         //   steering = left - right, throttle = 0.5*(left + right)
-        const float motor_left  = thr[2];
-        const float motor_right = thr[1];
+        // FRONT 模式下油门为负（reversed 倒车），前电机反转把船往船尾方向拉，
+        // 差速转向符号与 REAR 一致（左侧快→顺时针/右转）。
+        const float motor_left  = front_pair_active ? thr[3] : thr[2];
+        const float motor_right = front_pair_active ? thr[0] : thr[1];
         const float steering = motor_left - motor_right;
         const float throttle = 0.5f * (motor_left + motor_right);
 
@@ -374,8 +385,12 @@ void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
         const float target_speed = throttle * max_speed;
         const float accel = max_accel * (target_speed - speed) / max_speed;
 
-        // 偏航率（与原生 skid 模型一致，低速也可原地转向）
-        const float yaw_rate = calc_yaw_rate(steering, speed);
+        // 差速船必须支持低速/零速原地转向（这是差速驱动的核心能力）。
+        // 不能用 calc_yaw_rate()：omnix 模型 skid_steering=false，且其
+        // speed≈0 时返回 0，会造成"电机在转但船不转"的死锁。
+        // 改用与原生 skid steering 相同的直接比例模型：偏航率与 steering
+        // 成正比，不受速度门槛限制。
+        const float yaw_rate = constrain_float(steering * skid_turn_rate, -MAX_YAW_RATE, MAX_YAW_RATE);
 
         gyro = Vector3f(0, 0, radians(yaw_rate) + radians(omnix_yaw_drift));
         dcm.rotate(gyro * delta_time);

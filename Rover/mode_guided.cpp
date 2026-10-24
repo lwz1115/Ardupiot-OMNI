@@ -315,6 +315,20 @@ bool ModeGuided::set_desired_location(const Location &destination, Location next
     }
 #endif
 
+    // 摆渡（Ferry）电机对自动选择：目标在前方用后电机对（REAR 差速前进），
+    // 目标在后方用前电机对（FRONT 差速倒车前进），船体无需掉头即可直线往返。
+    // AR_WPNav 原生支持 reversed 倒车导航，位置控制器已自动处理倒车转向符号。
+    if (g2.motors.is_omni()) {
+        const float target_bearing_cd = rover.current_loc.get_bearing_to(destination);
+        const float yaw_error = wrap_180_cd(target_bearing_cd - ahrs.yaw_sensor);
+        const bool reverse = fabsf(yaw_error) > 9000;   // 目标在船尾方向
+        g2.motors.set_motor_pair(reverse ? AP_MotorsUGV::MotorPair::FRONT : AP_MotorsUGV::MotorPair::REAR);
+        set_reversed(reverse);
+    } else {
+        g2.motors.set_motor_pair(AP_MotorsUGV::MotorPair::ALL);
+        set_reversed(false);
+    }
+
     if (use_scurves_for_navigation()) {
         // use scurves for navigation
         if (!g2.wp_nav.set_desired_location(destination, next_destination)) {

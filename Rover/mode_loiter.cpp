@@ -2,6 +2,10 @@
 
 bool ModeLoiter::_enter()
 {
+    // 悬停需要全向四电机（OMNI X）：确保从 GUIDED/AUTO 差速段（REAR/FRONT）
+    // 切到悬停后恢复全部电机，才能全向定点保持。
+    g2.motors.set_motor_pair(AP_MotorsUGV::MotorPair::ALL);
+
     // set _destination to reasonable stopping point
     if (!g2.wp_nav.get_stopping_location(_destination)) {
         return false;
