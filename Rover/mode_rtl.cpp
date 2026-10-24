@@ -10,6 +10,20 @@ bool ModeRTL::_enter()
     // initialise waypoint navigation library
     g2.wp_nav.init(MAX(0.0f, g2.rtl_speed));
 
+    // 摆渡（Ferry）一致性：全向机架按目标（home）相对船头方位选择电机对，
+    // 目标在前用 REAR 差速前进，目标在后用 FRONT 差速倒车，Home 方向无需掉头。
+    // 若从 GUIDED/FRONT 段进入 RTL，这里会覆盖遗留的电机对状态。
+    if (g2.motors.is_omni()) {
+        const float home_bearing_cd = rover.current_loc.get_bearing_to(ahrs.get_home());
+        const float yaw_error = wrap_180_cd(home_bearing_cd - ahrs.yaw_sensor);
+        const bool reverse = fabsf(yaw_error) > 9000;
+        g2.motors.set_motor_pair(reverse ? AP_MotorsUGV::MotorPair::FRONT : AP_MotorsUGV::MotorPair::REAR);
+        set_reversed(reverse);
+    } else {
+        g2.motors.set_motor_pair(AP_MotorsUGV::MotorPair::ALL);
+        set_reversed(false);
+    }
+
     // set target to the closest rally point or home
 #if HAL_RALLY_ENABLED
     if (!g2.wp_nav.set_desired_location(g2.rally.calc_best_rally_or_home_location(rover.current_loc, ahrs.get_home().alt))) {

@@ -329,17 +329,15 @@ bool ModeGuided::set_desired_location(const Location &destination, Location next
         set_reversed(false);
     }
 
-    if (use_scurves_for_navigation()) {
-        // use scurves for navigation
-        if (!g2.wp_nav.set_desired_location(destination, next_destination)) {
-            return false;
-        }
-    } else {
-        // use position controller input shaping for navigation
-        // this does not support object avoidance but does allow faster updates of the target
-        if (!g2.wp_nav.set_desired_location_expect_fast_update(destination)) {
-            return false;
-        }
+    const bool ret = use_scurves_for_navigation()
+                         ? g2.wp_nav.set_desired_location(destination, next_destination)
+                         : g2.wp_nav.set_desired_location_expect_fast_update(destination);
+    if (!ret) {
+        // 目标设置失败（例如位置无效）：恢复全向电机对，避免悬挂在
+        // 已切换的 REAR/FRONT 上导致后续 loiter 用错误电机对悬停。
+        g2.motors.set_motor_pair(AP_MotorsUGV::MotorPair::ALL);
+        set_reversed(false);
+        return false;
     }
 
     // handle guided specific initialisation and logging
