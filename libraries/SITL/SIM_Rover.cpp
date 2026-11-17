@@ -325,12 +325,16 @@ void SimRover::update_omni3(const struct sitl_input &input, float delta_time)
                 , sin(45度) * sign_y_i ]
 
   其中 sign_x_i/sign_y_i 编码推进器的固定朝向。
-  四个推进器合力提供前后（surge）、左右（sway）与偏航（yaw）自由度，
-  因此车辆无需转向即可向任意方向移动。
+  四个推进器合力提供前后（surge）与左右（sway）自由度，因此车辆无需
+  转向即可向任意方向平移。
+
+  注意：X 型四电机朝外 45°，每个推进器的推力方向沿对角线，位置矢量与
+  推力方向共线，力矩 r×F = 0，无法产生纯偏航力矩。真实船体不能自转
+  （用户实测确认），因此本模型在 ALL 模式下不产生偏航（yaw_target=0）。
+  只有差速模式（REAR/FRONT，两电机不对称）才能调整船头。
 
   下面的符号约定与 AP_MotorsUGV::setup_omni() 的混合系数一致：正的
-  油门指令产生前进，正的转向产生顺时针（右转）偏航，正的横向产生向右
-  运动。
+  油门指令产生前进，正的横向产生向右运动。
  */
 void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
 {
@@ -412,7 +416,8 @@ void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
     // 因此逆矩阵为转置矩阵乘以 1/4（= 1/电机数）。
     const float inv_mix_scale = 0.25f;
     const float throttle_cmd  = inv_mix_scale * ( thr[0] + thr[1] + thr[2] + thr[3]);
-    const float steering_cmd  = inv_mix_scale * (-thr[0] + thr[1] + thr[2] - thr[3]);
+    // 偏航指令 steering_cmd 不再用于产生偏航：X 型四电机朝外 45° 推力通过
+    // 船体中心，无法自转（见上方注释）。保留逆矩阵的横向分量即可。
     const float lateral_cmd   = inv_mix_scale * (-thr[0] - thr[1] + thr[2] + thr[3]);
 
     const float surge_target = throttle_cmd * omnix_max_speed;
@@ -421,7 +426,11 @@ void SimRover::update_omnix(const struct sitl_input &input, float delta_time)
     // 以模拟真实车辆。未经与真实船交叉验证，不要移除这个取反——移除它会
     // 使所有侧向穿梭平移反向。
     const float sway_target  = -lateral_cmd * omnix_max_lateral_speed;
-    const float yaw_target   = steering_cmd * radians(omnix_max_yaw_rate);
+    // X 型四电机朝外 45°，推力方向都通过船体中心（位置矢量与推力共线），
+    // 力矩 r×F = 0，无法产生纯偏航力矩。真实船体不能自转（用户实测确认），
+    // 因此 ALL 模式下偏航目标恒为 0：悬停只做前后/左右平移，不调整船头。
+    // 只有差速模式（REAR/FRONT，两电机不对称）才能调整船头。
+    const float yaw_target   = 0.0f;
 
     // 非常粗略的一阶油门模型。纯比例 accel = gain * (target - velocity)
     // 使稳态速度等于指令的目标速度。若在此处额外加入线性阻尼项，会把稳态
