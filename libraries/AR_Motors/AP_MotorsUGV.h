@@ -117,10 +117,14 @@ public:
     bool is_omni() const { return _frame_type != FRAME_TYPE_UNDEFINED && _motors_num > 0; }
 
     // 电机对：全向机架在差速模式下只激活部分电机（其余输出 TRIM 停转）
+    // 编号约定：顺时针 M1=右前,SERVO1 / M2=右后,SERVO2 / M3=左后,SERVO3 /
+    //           M4=左前,SERVO4（与 setup_omni() 的 motor0..3 对应）
     enum class MotorPair : uint8_t {
         ALL   = 0,  // 全部电机参与（悬停/全向平移）
-        REAR  = 1,  // 只激活后电机对 M2/M3（手动/自动/穿梭去程差速）
-        FRONT = 2,  // 只激活前电机对 M0/M1（穿梭回程倒车差速）
+        REAR  = 1,  // 只激活后电机对 M2/M3 = 23（手动/自动/穿梭去程差速）
+        FRONT = 2,  // 只激活前电机对 M1/M4 = 14（穿梭回程倒车差速）
+        RIGHT = 3,  // 只激活右舷电机对 M1/M2 = 12（手动模式应急差速）
+        LEFT  = 4,  // 只激活左舷电机对 M3/M4 = 34（手动模式应急差速）
     };
 
     // 设置激活的电机对
@@ -128,6 +132,10 @@ public:
 
     // 当前激活的电机对
     MotorPair get_motor_pair() const { return _motor_pair; }
+
+    // 手动模式电机对方向映射开关：为 true 时差速分支按每对实际安装朝向
+    // 做前进/转向方向映射（仅手动模式使用）；自动模式保持原差速公式。
+    void set_manual_pair_mapping(bool on) { _manual_pair_mapping = on; }
 
     // 返回用于参数转换到继电器功能的继电器索引
     bool get_legacy_relay_index(int8_t &index1, int8_t &index2, int8_t &index3, int8_t &index4) const;
@@ -262,6 +270,9 @@ private:
 
     // 差速模式激活的电机对（默认全部，保持原有全向行为）
     MotorPair _motor_pair = MotorPair::ALL;
+
+    // 手动模式电机对方向映射（仅手动模式启用，自动模式保持 false）
+    bool _manual_pair_mapping = false;
 
     /*
       3 个倒转处理结构体，分别用于 k_throttle、k_throttleLeft 和 k_throttleRight

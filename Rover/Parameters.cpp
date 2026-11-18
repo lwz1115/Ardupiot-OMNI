@@ -694,6 +694,13 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("OMNI_VEL_GAIN", 17, ParametersG2, omni_vel_gain, 0.25f),
 
+    // @Param: MANUAL_PAIR
+    // @DisplayName: 手动模式电机对
+    // @Description: 手动模式(MANUAL)下激活的差速电机对（其余电机停转）。单电机故障时可切换到不含故障电机的相邻对继续应急航行。仅手动模式生效；自动/引导/摆渡等模式不受此参数影响，固定按目标方向选择前后对(14/23)。
+    // @Values: 0:前对M1M4(14),1:后对M2M3(23),2:右舷对M1M2(12),3:左舷对M3M4(34)
+    // @User: Advanced
+    AP_GROUPINFO("MANUAL_PAIR", 41, ParametersG2, manual_pair, 1),
+
     // 两点穿梭模式参数（SHUTTLE_*）
     AP_SUBGROUPINFO(shuttle, "SHUTTLE_", 32, ParametersG2, AP_Shuttle),
 

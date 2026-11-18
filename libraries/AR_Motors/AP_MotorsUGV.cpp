@@ -964,7 +964,7 @@ void AP_MotorsUGV::output_omni(bool armed, float steering, float throttle, float
         // 限制转向
         steering = constrain_float(steering, -4500.0f, 4500.0f);
 
-        // 差速模式（REAR/FRONT）：只激活一对电机，用原生差速公式
+        // 差速模式（REAR/FRONT/RIGHT/LEFT）：只激活一对电机，用原生差速公式
         //   motor_left  = throttle + steering
         //   motor_right = throttle - steering
         // 其余电机输出 TRIM(1500) 保持停转，避免搅动 ADCP 附近水流。
@@ -974,18 +974,52 @@ void AP_MotorsUGV::output_omni(bool armed, float steering, float throttle, float
             const float motor_left  = constrain_float(scaled_throttle + scaled_steering, -1.0f, 1.0f);
             const float motor_right = constrain_float(scaled_throttle - scaled_steering, -1.0f, 1.0f);
 
-            const uint8_t left_motor  = (_motor_pair == MotorPair::REAR) ? 2 : 3;   // 后左/前左
-            const uint8_t right_motor = (_motor_pair == MotorPair::REAR) ? 1 : 0;   // 后右/前右
+            // 电机对 → 左右电机编号（motor0..3 对应 M1..M4，见 AP_MotorsUGV.h）
+            // steer_left/steer_right：手动模式下左/右电机的转向系数（含每对朝向映射）
+            uint8_t left_motor = 0, right_motor = 0;
+            int8_t steer_left = 0, steer_right = 0;
+            switch (_motor_pair) {
+            case MotorPair::REAR:           // 23：左后 M3 + 右后 M2（基准对）
+                left_motor = 2; right_motor = 1;
+                steer_left = +1; steer_right = -1;
+                break;
+            case MotorPair::FRONT:          // 14：左前 M4 + 右前 M1（船头参考翻转 180°）
+                left_motor = 3; right_motor = 0;
+                steer_left = +1; steer_right = -1;
+                break;
+            case MotorPair::RIGHT:          // 12：右舷纵向对（右前 M1 + 右后 M2）
+                left_motor = 0; right_motor = 1;
+                steer_left = +1; steer_right = +1;
+                break;
+            case MotorPair::LEFT:           // 34：左舷纵向对（左前 M4 + 左后 M3）
+                left_motor = 3; right_motor = 2;
+                steer_left = -1; steer_right = -1;
+                break;
+            case MotorPair::ALL:
+                break;
+            }
+
+            // 各电机“外转（前进）”对应的输出极性（X 型安装物理属性，与电机对无关）：
+            //   M2/M3 正转=外转(+1)，M1/M4 反转=外转(-1)。
+            // 仅手动模式（_manual_pair_mapping）使用该映射；自动模式保持原差速公式。
+            static const int8_t ext_sign[4] = { -1, +1, +1, -1 };
 
             for (uint8_t i=0; i<_motors_num; i++) {
+                float out;
                 if (i == left_motor) {
-                    output_throttle(SRV_Channels::get_motor_function(i), motor_left * 100.0f);
+                    out = _manual_pair_mapping
+                        ? (ext_sign[i] * scaled_throttle + steer_left * scaled_steering)
+                        : motor_left;
                 } else if (i == right_motor) {
-                    output_throttle(SRV_Channels::get_motor_function(i), motor_right * 100.0f);
+                    out = _manual_pair_mapping
+                        ? (ext_sign[i] * scaled_throttle + steer_right * scaled_steering)
+                        : motor_right;
                 } else {
                     // 未激活电机停转（TRIM = 中位 PWM）
                     SRV_Channels::set_output_limit(SRV_Channels::get_motor_function(i), SRV_Channel::Limit::TRIM);
+                    continue;
                 }
+                output_throttle(SRV_Channels::get_motor_function(i), constrain_float(out, -1.0f, 1.0f) * 100.0f);
             }
             return;
         }

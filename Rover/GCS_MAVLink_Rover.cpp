@@ -608,6 +608,27 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_packet(const mavlink_command_in
         }
         return MAV_RESULT_UNSUPPORTED;
 
+    case MAV_CMD_USER_2:
+        // 手动模式电机对应急切换（QGC 自定义按钮用，MAV_CMD 31011）：
+        //   param1: 0=前对14(M1M4), 1=后对23(M2M3), 2=右舷12(M1M2), 3=左舷34(M3M4)
+        // 写入并保存参数 MANUAL_PAIR；仅手动模式(MANUAL)生效，
+        // 其他模式不受影响（按目标方向固定选择 14/23）。
+        if (!rover.g2.motors.is_omni()) {
+            return MAV_RESULT_UNSUPPORTED;
+        }
+        switch ((int16_t)packet.param1) {
+        case 0:
+        case 1:
+        case 2:
+        case 3:
+            rover.g2.manual_pair.set_and_save((int8_t)packet.param1);
+            GCS_SEND_TEXT(MAV_SEVERITY_INFO, "MANUAL_MOTOR_PAIR %u", (unsigned)packet.param1);
+            return MAV_RESULT_ACCEPTED;
+        default:
+            GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "MOT_PAIR_ERR_RANGE");
+            return MAV_RESULT_DENIED;
+        }
+
     default:
         return GCS_MAVLINK::handle_command_int_packet(packet, msg);
     }

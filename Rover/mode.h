@@ -722,6 +722,10 @@ protected:
 
     bool _enter() override;
     void _exit() override;
+
+private:
+    // 上次生效的 MANUAL_PAIR，用于检测电机对切换（切换时先停输出再换对）
+    uint8_t _last_pair = 1;
 };
 
 
