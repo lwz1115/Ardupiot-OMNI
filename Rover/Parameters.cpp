@@ -516,7 +516,7 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @Description: Behaviour after mission completes
     // @Values: 0:Hold in Auto Mode,1:Loiter in Auto Mode,2:Acro Mode,3:Manual Mode
     // @User: Standard
-    AP_GROUPINFO("MIS_DONE_BEHAVE", 38, ParametersG2, mis_done_behave, 0),
+    AP_GROUPINFO("MIS_DONE_BEHAVE", 38, ParametersG2, mis_done_behave, 1),
 
     // 39 was AP_Gripper
 

@@ -46,8 +46,36 @@ const AP_Param::GroupInfo AP_Shuttle::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("CRUISE", 5, AP_Shuttle, _speed, 1.0f),
 
+    // @Param: RCCH
+    // @DisplayName: 摆渡遥控三档通道
+    // @Description: QGC 摆渡图层开启后，飞控检测该遥控通道的 PWM 判断三档：<1200 去A点，1200~1800 无动作，>1800 去B点。
+    // @Range: 1 16
+    // @User: Advanced
+    AP_GROUPINFO("RCCH", 6, AP_Shuttle, _rc_ch, 6),
+
     AP_GROUPEND
 };
+
+// 遥控三档检测通道号（钳制到合法范围，默认 6）
+uint8_t AP_Shuttle::rc_switch_channel() const
+{
+    int8_t ch = _rc_ch.get();
+    if (ch < 1 || ch > 16) {
+        return 6;
+    }
+    return (uint8_t)ch;
+}
+
+// QGC 摆渡图层开/关：开启后才检测遥控三档；开启瞬间先记录当前档位不触发
+void AP_Shuttle::set_rc_switch_enabled(bool on)
+{
+    if (on && !_rc_switch_enabled) {
+        _rc_switch_init = false;   // 重新初始化：首次采样只记录
+        _rc_stable = 0;
+    }
+    _rc_switch_enabled = on;
+    rover.gcs().send_text(MAV_SEVERITY_INFO, "SHUTTLE_RCSW %s", on ? "ON" : "OFF");
+}
 
 // 校验一条航程但不改变任何状态。当该指令必须被拒绝时返回 false。
 bool AP_Shuttle::validate_leg(const Location &target)
@@ -118,6 +146,9 @@ void AP_Shuttle::update()
     // 持续维护"当前所在点"（A/B）
     update_current_wp();
 
+    // QGC 摆渡图层使能后，检测遥控三档开关
+    update_rc_switch();
+
     switch (_state) {
     case State::IDLE:
     case State::MANUAL_MODE:
@@ -130,6 +161,73 @@ void AP_Shuttle::update()
     case State::MOVING:
         update_active_leg();
         return;
+    }
+}
+
+// 遥控三档检测：仅在 QGC 摆渡图层使能后生效
+//   <1200   LOW    → 自动去 A 点
+//   1200~1800 MIDDLE → 切换手动模式（人工接管）
+//   >1800   HIGH   → 自动去 B 点
+void AP_Shuttle::update_rc_switch()
+{
+    if (!_rc_switch_enabled) {
+        return;
+    }
+    RC_Channel *c = rc().channel(rc_switch_channel() - 1);
+    if (c == nullptr) {
+        return;
+    }
+    const uint16_t pwm = c->get_radio_in();
+    if (pwm == 0) {
+        return;   // 无遥控信号
+    }
+
+    uint8_t pos;
+    if (pwm < 1200) {
+        pos = 0;        // LOW
+    } else if (pwm <= 1800) {
+        pos = 1;        // MIDDLE
+    } else {
+        pos = 2;        // HIGH
+    }
+
+    // 使能后首次采样只记录当前档位，不触发（避免使能瞬间误动作）
+    if (!_rc_switch_init) {
+        _rc_switch_init = true;
+        _rc_last_pos = pos;
+        _rc_candidate = pos;
+        _rc_stable = 0;
+        return;
+    }
+
+    if (pos == _rc_last_pos) {
+        _rc_candidate = pos;
+        _rc_stable = 0;
+        return;
+    }
+
+    // 去抖：连续 5 次（约 100ms）采样一致才确认切换
+    if (pos == _rc_candidate) {
+        _rc_stable++;
+    } else {
+        _rc_candidate = pos;
+        _rc_stable = 1;
+    }
+    if (_rc_stable < 5) {
+        return;
+    }
+    _rc_last_pos = pos;
+    _rc_stable = 0;
+
+    if (pos == 0) {
+        start_leg_to(1);      // LOW → A 点
+    } else if (pos == 1) {
+        // MIDDLE → 切换手动模式（人工接管）
+        if (rover.control_mode != &rover.mode_manual) {
+            rover.set_mode(rover.mode_manual, ModeReason::RC_COMMAND);
+        }
+    } else if (pos == 2) {
+        start_leg_to(2);      // HIGH → B 点
     }
 }
 
@@ -205,6 +303,35 @@ bool AP_Shuttle::get_switch_target(Location &target) const
         rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_NOWP");
         return false;
     }
+    return true;
+}
+
+// 启动去 A 点(which=1) 或 B 点(which=2) 的航程（供遥控三档开关使用）。
+// 会切到 GUIDED 并设置目标；到达后由 GUIDED 自动切到 LOITER 悬停。
+bool AP_Shuttle::start_leg_to(uint8_t which)
+{
+    const Location *target = nullptr;
+    if (which == 1 && _wp_a_valid) {
+        target = &_wp_a;
+    } else if (which == 2 && _wp_b_valid) {
+        target = &_wp_b;
+    }
+    if (target == nullptr) {
+        rover.gcs().send_text(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_POINTS");
+        return false;
+    }
+    if (!validate_leg(*target)) {
+        return false;
+    }
+    if (!rover.control_mode->in_guided_mode()) {
+        if (!rover.set_mode(Mode::Number::GUIDED, ModeReason::RC_COMMAND)) {
+            return false;
+        }
+    }
+    if (!rover.mode_guided.set_desired_location(*target)) {
+        return false;
+    }
+    begin_leg(*target);
     return true;
 }
 

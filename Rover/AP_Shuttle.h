@@ -66,6 +66,16 @@ public:
     void update_current_wp();
     // 请求切到另一个点。返回目标点位置；若尚未定义两点或当前位置未知返回 false。
     bool get_switch_target(Location &target) const;
+    // 启动去 A 点(which=1) 或 B 点(which=2) 的航程（供遥控三档开关使用）。
+    // 会切到 GUIDED 并设置目标；到达后由 GUIDED 切到 LOITER 悬停。
+    bool start_leg_to(uint8_t which);
+
+    // 遥控三档开关使能（由 QGC 摆渡图层开启时下发命令置位）。
+    // 仅使能后飞控才检测遥控通道信号；未使能则不触发任何动作。
+    void set_rc_switch_enabled(bool on);
+    bool rc_switch_enabled() const { return _rc_switch_enabled; }
+    // 检测的遥控通道号（SHUTTLE_RCCH，默认 6）
+    uint8_t rc_switch_channel() const;
     // 启动一个模拟任务（保持悬停，本地计时）。仅 HOVER 状态可启动。
     bool start_task(TaskType type);
 
@@ -94,6 +104,7 @@ private:
     void set_state(State s) { _state = s; }
     void update_active_leg();
     void update_task();
+    void update_rc_switch();
 
     // 穿梭功能使能/禁用
     AP_Int8  _enabled;              // SHUTTLE_EN
@@ -119,4 +130,12 @@ private:
     TaskType _task_type = TaskType::NONE;
     uint32_t _task_start_ms = 0;
     uint32_t _task_duration_ms = 0;   // 采样 10s / 测量 5s
+
+    // 遥控三档开关（QGC 摆渡图层使能后才生效）
+    AP_Int8  _rc_ch;                  // SHUTTLE_RCCH 检测通道号，默认 6
+    bool     _rc_switch_enabled = false;
+    bool     _rc_switch_init = false;     // 首次采样只记录不触发
+    uint8_t  _rc_last_pos = 1;            // 0=LOW 1=MIDDLE 2=HIGH
+    uint8_t  _rc_candidate = 1;
+    uint8_t  _rc_stable = 0;              // 去抖计数
 };

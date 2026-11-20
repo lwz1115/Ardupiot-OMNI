@@ -630,6 +630,11 @@ void ModeAuto::exit_mission()
         // the default "start_stop" behaviour is used
         break;
     case DoneBehaviour::LOITER:
+        // 真正切到 LOITER 模式（而非 AUTO 内部 loiter 子模式），
+        // 使 QGC 左上角模式同步显示为“悬停/Loiter”。
+        if (rover.set_mode(rover.mode_loiter, ModeReason::MISSION_END)) {
+            return;
+        }
         if (start_loiter()) {
             return;
         }

@@ -512,6 +512,8 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_packet(const mavlink_command_in
         //   4 = 切换：当前在 A 则去 B，当前在 B 则去 A
         //   5 = 开始采样任务（模拟 10s）
         //   6 = 开始测量任务（模拟 5s）
+        //   7 = 摆渡图层开启：使能遥控三档开关检测
+        //   8 = 摆渡图层关闭：停用遥控三档开关检测
         if (rover.g2.shuttle.enabled()) {
             switch ((int8_t)packet.param1) {
             case 0: {
@@ -600,6 +602,16 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_packet(const mavlink_command_in
                 const bool ok = rover.g2.shuttle.start_task(AP_Shuttle::TaskType::MEASURE);
                 return ok ? MAV_RESULT_ACCEPTED : MAV_RESULT_DENIED;
             }
+
+            case 7:
+                // QGC 摆渡图层开启：使能遥控三档开关检测（参数 SHUTTLE_RCCH 指定通道）
+                rover.g2.shuttle.set_rc_switch_enabled(true);
+                return MAV_RESULT_ACCEPTED;
+
+            case 8:
+                // QGC 摆渡图层关闭：停用遥控三档开关检测（不再响应拨杆）
+                rover.g2.shuttle.set_rc_switch_enabled(false);
+                return MAV_RESULT_ACCEPTED;
 
             default:
                 GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "SHUTTLE_ERR_CMD");

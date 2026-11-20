@@ -52,6 +52,8 @@ void RC_Channel_Rover::init_aux_function(const AUX_FUNC ch_option, const AuxSwit
     case AUX_FUNC::SMART_RTL:
     case AUX_FUNC::STEERING:
     case AUX_FUNC::WIND_VANE_DIR_OFSSET:
+    // 摆渡三档开关上电不主动触发（避免上电即发船）
+    case AUX_FUNC::SHUTTLE_AB:
         break;
     case AUX_FUNC::SAILBOAT_MOTOR_3POS:
         do_aux_function_sailboat_motor_3pos(ch_flag);
@@ -223,6 +225,28 @@ bool RC_Channel_Rover::do_aux_function(const AuxFuncTrigger &trigger)
     // Set mode to LOITER
     case AUX_FUNC::LOITER:
         do_aux_function_change_mode(rover.mode_loiter, ch_flag);
+        break;
+
+    // 摆渡三档开关（仅当 QGC 摆渡图层使能后才响应）：
+    // LOW=自动去 A 点, MIDDLE=切换手动模式, HIGH=自动去 B 点
+    case AUX_FUNC::SHUTTLE_AB:
+        if (!rover.g2.shuttle.rc_switch_enabled()) {
+            break;
+        }
+        switch (ch_flag) {
+        case AuxSwitchPos::LOW:
+            rover.g2.shuttle.start_leg_to(1);
+            break;
+        case AuxSwitchPos::MIDDLE:
+            // 中位 → 切换手动模式（人工接管）
+            if (rover.control_mode != &rover.mode_manual) {
+                rover.set_mode(rover.mode_manual, ModeReason::RC_COMMAND);
+            }
+            break;
+        case AuxSwitchPos::HIGH:
+            rover.g2.shuttle.start_leg_to(2);
+            break;
+        }
         break;
 
 #if MODE_FOLLOW_ENABLED

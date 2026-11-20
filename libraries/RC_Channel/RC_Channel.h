@@ -412,6 +412,12 @@ public:
         // external projects.  See the SCRIPTING_1 range instead if
         // you are writing a Lua script.
 
+        // OmniX 自定义：摆渡三档开关
+        //   LOW  = 自动摆渡去 A 点（到达后悬停）
+        //   MID  = 切换手动模式（人工接管）
+        //   HIGH = 自动摆渡去 B 点（到达后悬停）
+        SHUTTLE_AB =         250,
+
 #if AP_SCRIPTING_ENABLED
         // inputs for the use of onboard lua scripting
         SCRIPTING_1 =        300,

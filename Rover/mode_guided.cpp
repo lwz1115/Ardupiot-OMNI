@@ -37,8 +37,12 @@ void ModeGuided::update()
 
                 // we have reached the destination so stay here
                 if (rover.is_boat()) {
-                    if (!start_loiter()) {
-                        stop_vehicle();
+                    // 到达后真正切到 LOITER 模式（QGC 显示“悬停”），
+                    // 而不是停在 GUIDED 内部 loiter 子模式。
+                    if (!rover.set_mode(rover.mode_loiter, ModeReason::MISSION_END)) {
+                        if (!start_loiter()) {
+                            stop_vehicle();
+                        }
                     }
                 } else {
                     stop_vehicle();
